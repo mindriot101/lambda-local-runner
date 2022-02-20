@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -11,12 +12,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-
 type RunArgs struct {
-	Image string
-	MountDir string
+	Image       string
+	MountDir    string
 	ExposedPort int
-	Command []string
+	Command     []string
 }
 
 type Client struct {
@@ -24,7 +24,7 @@ type Client struct {
 }
 
 func New() (*Client, error) {
-	cli, err  := client.NewEnvClient()
+	cli, err := client.NewEnvClient()
 	if err != nil {
 		return nil, fmt.Errorf("creating docker client: %w", err)
 	}
@@ -85,9 +85,13 @@ func (c *Client) runContainer(ctx context.Context, args *RunArgs) error {
 
 func (c *Client) pullImage(ctx context.Context, imageName string) error {
 	reader, err := c.cli.ImagePull(ctx, imageName, types.ImagePullOptions{})
-	defer reader.Close()
+	// defer reader.Close()
 	if err != nil {
-		return fmt.Errorf("docker ImagePull: %w", err)
+		output, err := ioutil.ReadAll(reader)
+		if err != nil {
+			panic(err)
+		}
+		return fmt.Errorf("docker ImagePull (%s): %w", string(output), err)
 	}
 	return nil
 }

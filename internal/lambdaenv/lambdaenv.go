@@ -51,7 +51,8 @@ func (e *LambdaEnvironment) Spawn(ctx context.Context, runtime string, handler s
 	// 	'{}'
 	//
 	port := e.newPort()
-	imageName := fmt.Sprintf("lambci/lambda:%s", runtime)
+	// FIXME: hardcoded architecture
+	imageName := fmt.Sprintf("public.ecr.aws/sam/emulation-%s:rapid-1.38.0-arm64", runtime)
 	args := &docker.RunArgs{
 		Image: imageName,
 		// FIXME
