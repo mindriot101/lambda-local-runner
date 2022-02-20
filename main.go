@@ -44,7 +44,11 @@ func main() {
 
 	// spawn in the foreground for now
 	log.Debug().Msg("spawning container")
-	if err = env.Spawn(ctx, "python3.8", "app.lambda_handler"); err != nil {
+	if err = env.Spawn(ctx, lambdaenv.SpawnArgs{
+		Runtime:      "python3.8",
+		Architecture: "x86_64",
+		Handler:      "app.lambda_handler",
+	}); err != nil {
 		panic(err)
 	}
 }

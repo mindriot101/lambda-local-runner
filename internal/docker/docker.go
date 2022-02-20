@@ -12,11 +12,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const samVersion = "1.38.1"
+
 type RunArgs struct {
 	Image       string
 	MountDir    string
 	ExposedPort int
 	Command     []string
+	Platform    string
 }
 
 type Client struct {
@@ -35,7 +38,7 @@ func New() (*Client, error) {
 
 func (c *Client) Run(ctx context.Context, args *RunArgs) error {
 	log.Debug().Str("image", args.Image).Msg("pulling image")
-	if err := c.pullImage(ctx, args.Image); err != nil {
+	if err := c.pullImage(ctx, args.Image, args.Platform); err != nil {
 		return fmt.Errorf("pulling image %s: %w", args.Image, err)
 	}
 	log.Debug().Msg("running container")
@@ -83,15 +86,23 @@ func (c *Client) runContainer(ctx context.Context, args *RunArgs) error {
 	return nil
 }
 
-func (c *Client) pullImage(ctx context.Context, imageName string) error {
-	reader, err := c.cli.ImagePull(ctx, imageName, types.ImagePullOptions{})
-	// defer reader.Close()
+func (c *Client) pullImage(ctx context.Context, imageName string, platform string) error {
+	reader, err := c.cli.ImagePull(ctx, imageName, types.ImagePullOptions{
+		Platform: platform,
+	})
+	if reader != nil {
+		defer reader.Close()
+	}
 	if err != nil {
-		output, err := ioutil.ReadAll(reader)
-		if err != nil {
-			panic(err)
+		if reader != nil {
+			output, err := ioutil.ReadAll(reader)
+			if err != nil {
+				panic(err)
+			}
+			return fmt.Errorf("docker ImagePull (%s): %w", string(output), err)
+		} else {
+			return fmt.Errorf("docker ImagePull: %w", err)
 		}
-		return fmt.Errorf("docker ImagePull (%s): %w", string(output), err)
 	}
 	return nil
 }

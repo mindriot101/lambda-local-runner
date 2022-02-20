@@ -27,10 +27,27 @@ type LambdaEnvironment struct {
 	lastPort  int
 }
 
+type SpawnArgs struct {
+	Architecture string
+	Runtime      string
+	Handler      string
+}
+
 func New(api dockerAPI) *LambdaEnvironment {
 	return &LambdaEnvironment{
 		api:      api,
 		lastPort: 9000,
+	}
+}
+
+func platformFromArchitecture(arch string) (string, error) {
+	switch arch {
+	case "x86_64":
+		return "x86_64", nil
+	case "arm64":
+		return "arm64", nil
+	default:
+		return "", fmt.Errorf("could not determine platform from architecture %s", arch)
 	}
 }
 
@@ -39,7 +56,7 @@ func New(api dockerAPI) *LambdaEnvironment {
 // Spawn runs a lambda function in a container and exposes the container port
 // on a unique port in the system. The port is then used to invoke the lambda
 // with the incoming payload from the HTTP request.
-func (e *LambdaEnvironment) Spawn(ctx context.Context, runtime string, handler string) error {
+func (e *LambdaEnvironment) Spawn(ctx context.Context, spawnArgs SpawnArgs) error { // architecture string, runtime string, handler string) error {
 	// docker run \
 	// 	--rm \
 	// 	-it \
@@ -51,14 +68,14 @@ func (e *LambdaEnvironment) Spawn(ctx context.Context, runtime string, handler s
 	// 	'{}'
 	//
 	port := e.newPort()
-	// FIXME: hardcoded architecture
-	imageName := fmt.Sprintf("public.ecr.aws/sam/emulation-%s:rapid-1.38.0-arm64", runtime)
+	imageName := fmt.Sprintf("public.ecr.aws/sam/emulation-%s:latest", spawnArgs.Runtime)
 	args := &docker.RunArgs{
 		Image: imageName,
 		// FIXME
 		MountDir:    "/home/simon/dev/lambda-local-runner/testproject/.aws-sam/build/HelloWorldFunction",
 		ExposedPort: port,
-		Command:     []string{handler},
+		Platform:    spawnArgs.Architecture,
+		Command:     []string{spawnArgs.Handler},
 	}
 	log.Debug().Interface("args", args).Msg("running container")
 	if err := e.api.Run(ctx, args); err != nil {
