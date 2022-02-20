@@ -2,45 +2,36 @@ package main
 
 import (
 	"context"
+	"os"
+	"os/signal"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
+	"github.com/mindriot101/lambda-local-runner/docker"
 )
 
 func main() {
-	cli, err := client.NewEnvClient()
+	cli, err := docker.New()
 	if err != nil {
 		panic(err)
 	}
 
-	ctx := context.Background()
-
-	// create the container
-	config := &container.Config{
-		Image:        "ubuntu:latest",
-		ExposedPorts: nat.PortSet{"8080": struct{}{}},
-		Cmd: []string{
-			"sleep",
-			"86400",
-		},
-	}
-	hostConfig := &container.HostConfig{
-		PortBindings: map[nat.Port][]nat.PortBinding{
-			nat.Port("8080"): {{
-				HostIP:   "127.0.0.1",
-				HostPort: "8080",
-			}},
-		},
+	args := docker.RunArgs{
+		Image:    "ubuntu:latest",
+		MountDir: "/home/simon/dev/lambda-local-runner/testproject",
 	}
 
-	resp, err := cli.ContainerCreate(ctx, config, hostConfig, nil, nil, "test")
-	if err != nil {
-		panic(err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	go func() {
+		for range c {
+			cancel()
+		}
+	}()
+
+	if err := cli.Run(ctx, &args); err != nil {
 		panic(err)
 	}
 }
