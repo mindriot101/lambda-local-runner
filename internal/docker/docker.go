@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"strconv"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 	"github.com/rs/zerolog/log"
 )
 
@@ -50,14 +52,26 @@ func (c *Client) Run(ctx context.Context, args *RunArgs) error {
 
 func (c *Client) runContainer(ctx context.Context, args *RunArgs) error {
 	// create the container
+	hPort := strconv.Itoa(args.ExposedPort)
+	cPort := "9001"
 	config := &container.Config{
 		Image: args.Image,
-		Cmd: []string{
-			"sleep",
-			"86400",
+		Cmd:   args.Command,
+		ExposedPorts: nat.PortSet{
+			nat.Port(cPort): {},
 		},
 	}
-	hostConfig := &container.HostConfig{}
+
+	hostConfig := &container.HostConfig{
+		PortBindings: nat.PortMap{
+			nat.Port(cPort): []nat.PortBinding{
+				{
+					HostIP:   "0.0.0.0",
+					HostPort: hPort,
+				},
+			},
+		},
+	}
 
 	log.Debug().Msg("creating container")
 	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, "test")

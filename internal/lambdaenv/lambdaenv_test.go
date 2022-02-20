@@ -16,10 +16,7 @@ func (m *mock) Run(ctx context.Context, args *docker.RunArgs) error {
 
 func TestAssignPort(t *testing.T) {
 	api := &mock{}
-	env, err := New(api)
-	if err != nil {
-		t.Fatalf("error returned when creating api")
-	}
+	env := New(api)
 
 	port := env.newPort()
 	if port != 9001 {
