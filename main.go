@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func main() {
+func run() error {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{
 		Out: os.Stderr,
@@ -27,7 +28,7 @@ func main() {
 
 	_, err := flags.Parse(&opts)
 	if err != nil {
-		os.Exit(1)
+		return nil
 	}
 
 	switch len(opts.Verbose) {
@@ -42,7 +43,7 @@ func main() {
 	log.Debug().Msg("creating docker client")
 	cli, err := docker.New()
 	if err != nil {
-		log.Fatal().Err(err).Msg("")
+		return fmt.Errorf("creating docker client: %w", err)
 	}
 	log.Debug().Msg("creating lambda client")
 	env := lambdaenv.New(cli, opts.Args.SourceDir)
@@ -76,6 +77,14 @@ func main() {
 
 	select {
 	case <-done:
-		return
+		return nil
 	}
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
