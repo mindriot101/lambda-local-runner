@@ -3,6 +3,7 @@ package lambdaenv
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
@@ -22,6 +23,7 @@ type dockerAPI interface {
 type LambdaEnvironment struct {
 	api dockerAPI
 
+	// TODO: switch to using atomics
 	mu        sync.Mutex
 	usedPorts []int
 	lastPort  int
@@ -58,9 +60,15 @@ func platformFromArchitecture(arch string) (string, error) {
 // with the incoming payload from the HTTP request.
 func (e *LambdaEnvironment) Spawn(ctx context.Context, spawnArgs SpawnArgs) error { // architecture string, runtime string, handler string) error {
 	port := e.newPort()
+
+	sourcePath, err := filepath.Abs("testproject/.aws-sam/build/HelloWorldFunction")
+	if err != nil {
+		return fmt.Errorf("creating mount path: %w", err)
+	}
+
 	args := &docker.RunArgs{
 		// FIXME
-		MountDir:    "/home/simon/dev/lambda-local-runner/testproject/.aws-sam/build/HelloWorldFunction",
+		SourcePath:  sourcePath,
 		ExposedPort: port,
 		Platform:    spawnArgs.Architecture,
 		Handler:     spawnArgs.Handler,
