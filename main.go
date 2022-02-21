@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/awslabs/goformation/v5"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jessevdk/go-flags"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdaenv"
@@ -82,6 +84,16 @@ func run() error {
 }
 
 func main() {
+	template, err := goformation.Open("testproject/template.yaml")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, resource := range template.Resources {
+		spew.Dump(resource)
+	}
+
+	return
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v", err)
 		os.Exit(1)
