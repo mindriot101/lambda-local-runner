@@ -31,6 +31,7 @@ type LambdaEnvironment struct {
 }
 
 type SpawnArgs struct {
+	Name         string
 	Architecture string
 	Runtime      string
 	Handler      string

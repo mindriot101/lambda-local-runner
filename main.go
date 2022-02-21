@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path"
 
 	"github.com/awslabs/goformation/v5"
-	"github.com/davecgh/go-spew/spew"
+	"github.com/awslabs/goformation/v5/cloudformation/serverless"
 	"github.com/jessevdk/go-flags"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdaenv"
@@ -23,8 +24,9 @@ func run() error {
 
 	var opts struct {
 		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
+		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
 		Args    struct {
-			SourceDir string `required:"yes" positional-arg-name:"source-dir"`
+			Template string `required:"yes" positional-arg-name:"template"`
 		} `positional-args:"yes" required:"yes"`
 	}
 
@@ -42,13 +44,16 @@ func run() error {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	}
 
+	functions, err := parseTemplate(opts.Args.Template)
+	if err != nil {
+		panic(err)
+	}
+
 	log.Debug().Msg("creating docker client")
 	cli, err := docker.New()
 	if err != nil {
 		return fmt.Errorf("creating docker client: %w", err)
 	}
-	log.Debug().Msg("creating lambda client")
-	env := lambdaenv.New(cli, opts.Args.SourceDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -63,37 +68,68 @@ func run() error {
 		}
 	}()
 
-	done := make(chan struct{})
-	go func() {
-		log.Debug().Msg("spawning container")
-		if err = env.Spawn(ctx, lambdaenv.SpawnArgs{
-			Runtime:      "python3.8",
-			Architecture: "x86_64",
-			Handler:      "app.lambda_handler",
-		}); err != nil {
-			log.Fatal().Err(err).Msg("")
-		}
+	done := make(chan struct{}, len(functions))
+	for _, function := range functions {
+		log.Debug().Msg("creating lambda client")
 
-		done <- struct{}{}
-	}()
+		functionDir := path.Join(opts.RootDir, function.Name)
+		log.Debug().Str("functionpath", functionDir).Msg("loading function")
 
-	select {
-	case <-done:
-		return nil
+		go func(fn lambdaenv.SpawnArgs) {
+			env := lambdaenv.New(cli, functionDir)
+			log.Debug().Msg("spawning container")
+			if err = env.Spawn(ctx, fn); err != nil {
+				log.Fatal().Err(err).Msg("")
+			}
+
+			done <- struct{}{}
+		}(function)
 	}
+
+	for i := 0; i < len(functions); i++ {
+		<-done
+	}
+
+	return nil
+}
+
+func parseTemplate(filename string) ([]lambdaenv.SpawnArgs, error) {
+	template, err := goformation.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("parsing template: %w", err)
+	}
+
+	functions := []lambdaenv.SpawnArgs{}
+	for logicalID, resource := range template.Resources {
+		switch resource.AWSCloudFormationType() {
+		case "AWS::Serverless::Function":
+			f, ok := resource.(*serverless.Function)
+			if !ok {
+				return nil, fmt.Errorf("invalid function %s", logicalID)
+			}
+
+			var architecture string
+			if len(f.Architectures) >= 1 {
+				architecture = f.Architectures[0]
+			} else {
+				architecture = "x86_64"
+			}
+
+			args := lambdaenv.SpawnArgs{
+				Name:         logicalID,
+				Architecture: architecture,
+				Runtime:      f.Runtime,
+				Handler:      f.Handler,
+			}
+			functions = append(functions, args)
+		default:
+		}
+	}
+
+	return functions, nil
 }
 
 func main() {
-	template, err := goformation.Open("testproject/template.yaml")
-	if err != nil {
-		panic(err)
-	}
-
-	for _, resource := range template.Resources {
-		spew.Dump(resource)
-	}
-
-	return
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v", err)
 		os.Exit(1)
