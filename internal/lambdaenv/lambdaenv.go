@@ -57,25 +57,13 @@ func platformFromArchitecture(arch string) (string, error) {
 // on a unique port in the system. The port is then used to invoke the lambda
 // with the incoming payload from the HTTP request.
 func (e *LambdaEnvironment) Spawn(ctx context.Context, spawnArgs SpawnArgs) error { // architecture string, runtime string, handler string) error {
-	// docker run \
-	// 	--rm \
-	// 	-it \
-	// 	-e DOCKER_LAMBDA_STAY_OPEN=1 \
-	// 	-p 9001:9001 \
-	// 	-v /home/simon/dev/lambda-local-runner/testproject/.aws-sam/build/HelloWorldFunction:/var/task:ro,delegated \
-	// 	lambci/lambda:python3.8 \
-	// 	app.lambda_handler \
-	// 	'{}'
-	//
 	port := e.newPort()
-	imageName := fmt.Sprintf("public.ecr.aws/sam/emulation-%s:latest", spawnArgs.Runtime)
 	args := &docker.RunArgs{
-		Image: imageName,
 		// FIXME
 		MountDir:    "/home/simon/dev/lambda-local-runner/testproject/.aws-sam/build/HelloWorldFunction",
 		ExposedPort: port,
 		Platform:    spawnArgs.Architecture,
-		Command:     []string{spawnArgs.Handler},
+		Handler:     spawnArgs.Handler,
 	}
 	log.Debug().Interface("args", args).Msg("running container")
 	if err := e.api.Run(ctx, args); err != nil {

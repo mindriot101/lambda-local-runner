@@ -24,7 +24,7 @@ func main() {
 	log.Debug().Msg("creating docker client")
 	cli, err := docker.New()
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("")
 	}
 	log.Debug().Msg("creating lambda client")
 	env := lambdaenv.New(cli)
@@ -49,6 +49,6 @@ func main() {
 		Architecture: "x86_64",
 		Handler:      "app.lambda_handler",
 	}); err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("")
 	}
 }
