@@ -106,49 +106,10 @@ func (c *Client) runContainer(ctx context.Context, imageName string, args *RunAr
 	log.Debug().Msg("waiting for container")
 	resC, errC := c.cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
 
-	// get the container output
-	outR, err := c.cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{
-		ShowStdout: true,
-		Follow:     true,
-	})
-	if err != nil {
-		log.Fatal().Err(err).Msg("getting container logs")
-	}
-	defer outR.Close()
-	_, _ = io.Copy(os.Stderr, outR)
-
-	// outC := make(chan []byte, 10)
-	// go func() {
-	// 	log.Debug().Msg("getting container logs")
-	// 	outR, err := c.cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{
-	// 		ShowStdout: true,
-	// 		Follow:     true,
-	// 	})
-	// 	log.Debug().Msg("container logs command returned")
-	// 	if err != nil {
-	// 		log.Warn().Err(err).Msg("getting container logs")
-	// 		return
-	// 	}
-	// 	defer outR.Close()
-
-	// 	buf := [80]byte{}
-	// 	for {
-	// 		log.Debug().Msg("fetching more bytes from container log output")
-	// 		n, err := outR.Read(buf[:])
-	// 		if err != nil {
-	// 			log.Warn().Err(err).Msg("reading from container output")
-	// 		}
-	// 		if n == 0 {
-	// 			break
-	// 		}
-	// 		outC <- buf[:]
-	// 	}
-	// }()
+	// TODO: optionally print container logs
 
 	for {
 		select {
-		// case msg := <-outC:
-		// 	log.Debug().Interface("msg", msg).Msg("log")
 		case msg := <-resC:
 			log.Debug().Interface("msg", msg).Msg("received message")
 			return nil
@@ -171,21 +132,6 @@ func (c *Client) runContainer(ctx context.Context, imageName string, args *RunAr
 			}
 		}
 	}
-
-	// if err := <-errC; err != nil {
-	// 	if errors.Is(err, context.Canceled) {
-	// 		log.Debug().Msg("got context cancellation, removing container")
-	// 		err = c.cli.ContainerRemove(context.TODO(), resp.ID, types.ContainerRemoveOptions{
-	// 			Force: true,
-	// 		})
-	// 		if err != nil {
-	// 			log.Warn().Err(err).Msg("error removing container")
-	// 		}
-	// 	} else {
-	// 		return fmt.Errorf("waiting for container: %w", err)
-	// 	}
-	// }
-	return nil
 }
 
 // buildImage builds a docker image
@@ -231,7 +177,6 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 		return "", fmt.Errorf("building image: %w", err)
 	}
 	defer res.Body.Close()
-	_, _ = io.Copy(os.Stdout, res.Body)
 	if err != nil {
 		return "", fmt.Errorf("printing build command output: %w", err)
 	}
