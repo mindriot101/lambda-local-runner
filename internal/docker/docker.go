@@ -196,7 +196,6 @@ func (c *Client) buildImage(ctx context.Context, platform string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("fetching lambda RIE: %w", err)
 	}
-	os.Exit(1)
 	// FIXME: hardcoding runtime
 	dockerfileSrc := fmt.Sprintf(`
 FROM  public.ecr.aws/sam/emulation-python3.8:latest
