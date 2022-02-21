@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"sync"
 
 	"github.com/awslabs/goformation/v5"
 	"github.com/awslabs/goformation/v5/cloudformation/serverless"
@@ -68,28 +69,25 @@ func run() error {
 		}
 	}()
 
-	done := make(chan struct{}, len(functions))
+	var wg sync.WaitGroup
 	for _, function := range functions {
+		wg.Add(1)
 		log.Debug().Msg("creating lambda client")
 
 		functionDir := path.Join(opts.RootDir, function.Name)
 		log.Debug().Str("functionpath", functionDir).Msg("loading function")
 
 		go func(fn lambdaenv.SpawnArgs) {
+			defer wg.Done()
 			env := lambdaenv.New(cli, functionDir)
 			log.Debug().Msg("spawning container")
 			if err = env.Spawn(ctx, fn); err != nil {
 				log.Fatal().Err(err).Msg("")
 			}
-
-			done <- struct{}{}
 		}(function)
 	}
 
-	for i := 0; i < len(functions); i++ {
-		<-done
-	}
-
+	wg.Wait()
 	return nil
 }
 
