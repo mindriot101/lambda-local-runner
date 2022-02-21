@@ -259,7 +259,7 @@ func writeTarEntry(tarfile *tar.Writer, name string, contents []byte, mode int64
 		return fmt.Errorf("writing tar header: %w", err)
 	}
 	if _, err := tarfile.Write([]byte(contents)); err != nil {
-		log.Printf("writing file contents: %w", err)
+		return fmt.Errorf("writing file contents: %w", err)
 	}
 	return nil
 }
