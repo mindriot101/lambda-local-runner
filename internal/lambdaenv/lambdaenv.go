@@ -21,7 +21,8 @@ type dockerAPI interface {
 }
 
 type LambdaEnvironment struct {
-	api dockerAPI
+	api       dockerAPI
+	sourceDir string
 
 	// TODO: switch to using atomics
 	mu        sync.Mutex
@@ -35,10 +36,11 @@ type SpawnArgs struct {
 	Handler      string
 }
 
-func New(api dockerAPI) *LambdaEnvironment {
+func New(api dockerAPI, sourceDir string) *LambdaEnvironment {
 	return &LambdaEnvironment{
-		api:      api,
-		lastPort: 9000,
+		api:       api,
+		lastPort:  9000,
+		sourceDir: sourceDir,
 	}
 }
 
@@ -61,7 +63,7 @@ func platformFromArchitecture(arch string) (string, error) {
 func (e *LambdaEnvironment) Spawn(ctx context.Context, spawnArgs SpawnArgs) error { // architecture string, runtime string, handler string) error {
 	port := e.newPort()
 
-	sourcePath, err := filepath.Abs("testproject/.aws-sam/build/HelloWorldFunction")
+	sourcePath, err := filepath.Abs(e.sourceDir)
 	if err != nil {
 		return fmt.Errorf("creating mount path: %w", err)
 	}

@@ -20,9 +20,9 @@ func main() {
 
 	var opts struct {
 		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
-		// Args      struct {
-		// 	Name string `required:"yes" positional-arg-name:"stack-name"`
-		// } `positional-args:"yes" required:"yes"`
+		Args    struct {
+			SourceDir string `required:"yes" positional-arg-name:"source-dir"`
+		} `positional-args:"yes" required:"yes"`
 	}
 
 	_, err := flags.Parse(&opts)
@@ -45,7 +45,7 @@ func main() {
 		log.Fatal().Err(err).Msg("")
 	}
 	log.Debug().Msg("creating lambda client")
-	env := lambdaenv.New(cli)
+	env := lambdaenv.New(cli, opts.Args.SourceDir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
