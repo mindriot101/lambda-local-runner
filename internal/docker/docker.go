@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -195,6 +196,7 @@ func (c *Client) buildImage(ctx context.Context, platform string) (string, error
 	if err != nil {
 		return "", fmt.Errorf("fetching lambda RIE: %w", err)
 	}
+	os.Exit(1)
 	// FIXME: hardcoding runtime
 	dockerfileSrc := fmt.Sprintf(`
 FROM  public.ecr.aws/sam/emulation-python3.8:latest
@@ -238,15 +240,42 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 	return imageName, nil
 }
 
+const rieAMD64Url = "https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie"
+const rieARM64Url = "https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie-arm64"
+
 func fetchRIE(platform string) (string, error) {
+	var url string
+	switch platform {
+	case "x86_64":
+		url = rieAMD64Url
+	case "arm64":
+		url = rieARM64Url
+	default:
+		return "", fmt.Errorf("unsupported platform %s", platform)
+	}
 	cacheLocation := fmt.Sprintf("/tmp/aws-lambda-rie-%s", platform)
+
+	logger := log.With().Str("src", url).Str("dest", cacheLocation).Logger()
+
+	logger.Debug().Msg("fetching file")
+
 	info, err := os.Stat(cacheLocation)
-	if err != nil {
-		// TODO: FETCH
+	if err == nil {
+		logger.Debug().Msg("entry exists")
+		if !info.IsDir() {
+			logger.Debug().Msg("cached file found")
+			return cacheLocation, nil
+		}
+
+		return "", fmt.Errorf("cahce location %s is a directory", cacheLocation)
 	}
-	if info.IsDir() {
-		// TODO: remove directory
+
+	// file does not exist so fetch
+	logger.Debug().Msg("fetching remote file")
+	if err = fetchFile(cacheLocation, rieAMD64Url); err != nil {
+		return "", fmt.Errorf("fetching file: %w", err)
 	}
+
 	return cacheLocation, nil
 }
 
@@ -260,6 +289,25 @@ func writeTarEntry(tarfile *tar.Writer, name string, contents []byte, mode int64
 	}
 	if _, err := tarfile.Write([]byte(contents)); err != nil {
 		return fmt.Errorf("writing file contents: %w", err)
+	}
+	return nil
+}
+
+func fetchFile(filepath, url string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("making http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	out, err := os.Create(filepath)
+	if err != nil {
+		return fmt.Errorf("creating filepath %s: %w", filepath, err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return fmt.Errorf("copying file contents: %w", err)
 	}
 	return nil
 }
