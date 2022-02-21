@@ -66,7 +66,8 @@ func (c *Client) runContainer(ctx context.Context, imageName string, args *RunAr
 		Cmd: []string{"/var/aws-lambda-rie", "--log-level", "debug"},
 		Env: []string{
 			"AWS_LAMBDA_FUNCTION_VERSION=$LATEST",
-			fmt.Sprintf("AWS_LAMBDA_FUNCTION_NAME=%s", args.Handler),
+			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", args.Handler),
+			"AWS_LAMBDA_FUNCTION_NAME=HelloWorldFunction",
 			"AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128",
 		},
 	}
