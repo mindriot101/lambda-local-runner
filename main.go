@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"path"
+	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/awslabs/goformation/v5"
 	"github.com/awslabs/goformation/v5/cloudformation/serverless"
 	"github.com/jessevdk/go-flags"
+	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -122,6 +128,11 @@ func parseTemplate(filename string) (EndpointMapping, error) {
 }
 
 func run() error {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = log.Output(zerolog.ConsoleWriter{
+		Out: os.Stderr,
+	})
+
 	var opts struct {
 		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
 		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
@@ -153,6 +164,53 @@ func run() error {
 	}
 
 	log.Debug().Interface("definition", mapping).Msg("parsed template")
+
+	log.Debug().Msg("creating docker client")
+	cli, err := docker.New()
+	if err != nil {
+		return fmt.Errorf("creating docker client: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	go func() {
+		for range c {
+			log.Debug().Msg("got ctrl-c event")
+			cancel()
+		}
+	}()
+
+	startPort := 9001
+	var wg sync.WaitGroup
+	for endpoint, definition := range mapping {
+		wg.Add(1)
+		// build a container with the desired runtime
+		// run the container in a unique port in the background
+
+		definition.Port = startPort
+		startPort++
+
+		imageName, err := cli.BuildImage(ctx, definition.Architecture)
+		if err != nil {
+			return fmt.Errorf("building image: %w", err)
+		}
+		log.Debug().Str("image_name", imageName).Msg("built image")
+		sourcePath, _ := filepath.Abs(path.Join(opts.RootDir, definition.LogicalID))
+		go func() {
+			defer wg.Done()
+			if err := cli.RunContainer(ctx, imageName, definition.Handler, sourcePath, definition.Port); err != nil {
+				log.Fatal().Err(err).Msg("running container")
+			}
+		}()
+
+		_ = endpoint
+	}
+
+	wg.Wait()
 
 	return nil
 

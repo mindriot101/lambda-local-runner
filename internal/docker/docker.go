@@ -43,21 +43,9 @@ func New() (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Run(ctx context.Context, args *RunArgs) error {
-	imageName, err := c.buildImage(ctx, args.Platform)
-	if err != nil {
-		return fmt.Errorf("building image: %w", err)
-	}
-	log.Debug().Msg("running container")
-	if err := c.runContainer(ctx, imageName, args); err != nil {
-		return fmt.Errorf("running container: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) runContainer(ctx context.Context, imageName string, args *RunArgs) error {
+func (c *Client) RunContainer(ctx context.Context, imageName string, handler string, sourcePath string, port int) error {
 	// create the container
-	hPort := strconv.Itoa(args.ExposedPort)
+	hPort := strconv.Itoa(port)
 	cPort := "8080"
 	config := &container.Config{
 		Image: imageName,
@@ -67,7 +55,7 @@ func (c *Client) runContainer(ctx context.Context, imageName string, args *RunAr
 		Cmd: []string{"/var/aws-lambda-rie", "--log-level", "debug"},
 		Env: []string{
 			"AWS_LAMBDA_FUNCTION_VERSION=$LATEST",
-			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", args.Handler),
+			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", handler),
 			"AWS_LAMBDA_FUNCTION_NAME=HelloWorldFunction",
 			"AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128",
 		},
@@ -85,7 +73,7 @@ func (c *Client) runContainer(ctx context.Context, imageName string, args *RunAr
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeBind,
-				Source: args.SourcePath,
+				Source: sourcePath,
 				Target: "/var/task",
 			},
 		},
@@ -134,10 +122,10 @@ func (c *Client) runContainer(ctx context.Context, imageName string, args *RunAr
 	}
 }
 
-// buildImage builds a docker image
+// BuildImage builds a docker image
 //
 // https://stackoverflow.com/a/46518557
-func (c *Client) buildImage(ctx context.Context, platform string) (string, error) {
+func (c *Client) BuildImage(ctx context.Context, platform string) (string, error) {
 	riePath, err := fetchRIE(platform)
 	if err != nil {
 		return "", fmt.Errorf("fetching lambda RIE: %w", err)
@@ -165,7 +153,7 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 
 	buildContext := bytes.NewReader(buf.Bytes())
 
-	imageName := "lambda-local-runner:latest"
+	imageName := fmt.Sprintf("lambda-local-runner-%s:latest", platform)
 	res, err := c.cli.ImageBuild(ctx, buildContext, types.ImageBuildOptions{
 		Tags:       []string{imageName},
 		Context:    buildContext,
@@ -177,6 +165,8 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 		return "", fmt.Errorf("building image: %w", err)
 	}
 	defer res.Body.Close()
+	// wait for the build to complete
+	_, _ = io.Copy(ioutil.Discard, res.Body)
 	if err != nil {
 		return "", fmt.Errorf("printing build command output: %w", err)
 	}
