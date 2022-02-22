@@ -30,11 +30,20 @@ type LambdaEnvironment struct {
 	lastPort  int
 }
 
+type Method string
+
+const (
+	MethodGET  Method = "GET"
+	MethodPOST        = "POST"
+)
+
 type SpawnArgs struct {
 	Name         string
 	Architecture string
 	Runtime      string
 	Handler      string
+	Endpoint     string
+	Method       Method
 }
 
 func New(api dockerAPI, sourceDir string) *LambdaEnvironment {

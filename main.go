@@ -13,6 +13,7 @@ import (
 	"github.com/jessevdk/go-flags"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdaenv"
+	"github.com/mindriot101/lambda-local-runner/internal/server"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -69,6 +70,7 @@ func run() error {
 		}
 	}()
 
+	svr := server.New()
 	var wg sync.WaitGroup
 	for _, function := range functions {
 		wg.Add(1)
@@ -76,6 +78,8 @@ func run() error {
 
 		functionDir := path.Join(opts.RootDir, function.Name)
 		log.Debug().Str("functionpath", functionDir).Msg("loading function")
+
+		svr.Add(function)
 
 		go func(fn lambdaenv.SpawnArgs) {
 			defer wg.Done()
@@ -86,6 +90,12 @@ func run() error {
 			}
 		}(function)
 	}
+
+	go func() {
+		if err := svr.Serve(ctx); err != nil {
+			log.Fatal().Err(err).Msg("")
+		}
+	}()
 
 	wg.Wait()
 	return nil
@@ -113,13 +123,31 @@ func parseTemplate(filename string) ([]lambdaenv.SpawnArgs, error) {
 				architecture = "x86_64"
 			}
 
-			args := lambdaenv.SpawnArgs{
-				Name:         logicalID,
-				Architecture: architecture,
-				Runtime:      f.Runtime,
-				Handler:      f.Handler,
+			for _, event := range f.Events {
+				if event.Type != "Api" {
+					continue
+				}
+
+				// try to parse the ApiEvent
+				evt := event.Properties.ApiEvent
+				if evt.Method == "" {
+					continue
+				}
+
+				// we have an api event, so roll with it
+				args := lambdaenv.SpawnArgs{
+					Name:         logicalID,
+					Architecture: architecture,
+					Runtime:      f.Runtime,
+					Handler:      f.Handler,
+					Endpoint:     evt.Path,
+					Method:       lambdaenv.Method(evt.Method),
+				}
+				functions = append(functions, args)
+				// TODO: only select the first valid event
+				break
 			}
-			functions = append(functions, args)
+
 		default:
 		}
 	}
