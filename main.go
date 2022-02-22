@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"path"
-	"sync"
+	"time"
 
 	"github.com/awslabs/goformation/v5"
 	"github.com/awslabs/goformation/v5/cloudformation/serverless"
-	"github.com/jessevdk/go-flags"
-	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdaenv"
 	"github.com/mindriot101/lambda-local-runner/internal/server"
 	"github.com/rs/zerolog"
@@ -24,81 +20,94 @@ func run() error {
 		Out: os.Stderr,
 	})
 
-	var opts struct {
-		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
-		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
-		Args    struct {
-			Template string `required:"yes" positional-arg-name:"template"`
-		} `positional-args:"yes" required:"yes"`
-	}
+	s := server.New()
+	s.Add(lambdaenv.SpawnArgs{
+		Endpoint: "/",
+	})
 
-	_, err := flags.Parse(&opts)
-	if err != nil {
-		return nil
-	}
-
-	switch len(opts.Verbose) {
-	case 0:
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case 1:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	default:
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	}
-
-	functions, err := parseTemplate(opts.Args.Template)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Debug().Msg("creating docker client")
-	cli, err := docker.New()
-	if err != nil {
-		return fmt.Errorf("creating docker client: %w", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	s.Serve(ctx)
+	return nil
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	/*
 
-	go func() {
-		for range c {
-			log.Debug().Msg("got ctrl-c event")
-			cancel()
+		var opts struct {
+			Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
+			RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
+			Args    struct {
+				Template string `required:"yes" positional-arg-name:"template"`
+			} `positional-args:"yes" required:"yes"`
 		}
-	}()
 
-	svr := server.New()
-	var wg sync.WaitGroup
-	for _, function := range functions {
-		wg.Add(1)
-		log.Debug().Msg("creating lambda client")
+		_, err := flags.Parse(&opts)
+		if err != nil {
+			return nil
+		}
 
-		functionDir := path.Join(opts.RootDir, function.Name)
-		log.Debug().Str("functionpath", functionDir).Msg("loading function")
+		switch len(opts.Verbose) {
+		case 0:
+			zerolog.SetGlobalLevel(zerolog.WarnLevel)
+		case 1:
+			zerolog.SetGlobalLevel(zerolog.InfoLevel)
+		default:
+			zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		}
 
-		svr.Add(function)
+		functions, err := parseTemplate(opts.Args.Template)
+		if err != nil {
+			panic(err)
+		}
 
-		go func(fn lambdaenv.SpawnArgs) {
-			defer wg.Done()
-			env := lambdaenv.New(cli, functionDir)
-			log.Debug().Msg("spawning container")
-			if err = env.Spawn(ctx, fn); err != nil {
+		log.Debug().Msg("creating docker client")
+		cli, err := docker.New()
+		if err != nil {
+			return fmt.Errorf("creating docker client: %w", err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+
+		go func() {
+			for range c {
+				log.Debug().Msg("got ctrl-c event")
+				cancel()
+			}
+		}()
+
+		svr := server.New()
+		var wg sync.WaitGroup
+		for _, function := range functions {
+			wg.Add(1)
+			log.Debug().Msg("creating lambda client")
+
+			functionDir := path.Join(opts.RootDir, function.Name)
+			log.Debug().Str("functionpath", functionDir).Msg("loading function")
+
+			svr.Add(function)
+
+			go func(fn lambdaenv.SpawnArgs) {
+				defer wg.Done()
+				env := lambdaenv.New(cli, functionDir)
+				log.Debug().Msg("spawning container")
+				if err = env.Spawn(ctx, fn); err != nil {
+					log.Fatal().Err(err).Msg("")
+				}
+			}(function)
+		}
+
+		go func() {
+			if err := svr.Serve(ctx); err != nil {
 				log.Fatal().Err(err).Msg("")
 			}
-		}(function)
-	}
+		}()
 
-	go func() {
-		if err := svr.Serve(ctx); err != nil {
-			log.Fatal().Err(err).Msg("")
-		}
-	}()
-
-	wg.Wait()
-	return nil
+		wg.Wait()
+		return nil
+	*/
 }
 
 func parseTemplate(filename string) ([]lambdaenv.SpawnArgs, error) {
