@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/docker/docker/api/types"
@@ -49,7 +50,7 @@ func New(cli dockerclient) *Client {
 	}
 }
 
-func (c *Client) RunContainer(ctx context.Context, imageName string, handler string, sourcePath string, port int) error {
+func (c *Client) RunContainer(ctx context.Context, containerName string, imageName string, handler string, sourcePath string, port int) error {
 	// create the container
 	hPort := strconv.Itoa(port)
 	cPort := "8080"
@@ -67,6 +68,7 @@ func (c *Client) RunContainer(ctx context.Context, imageName string, handler str
 		},
 	}
 
+	absSourcePath, _ := filepath.Abs(sourcePath)
 	hostConfig := &container.HostConfig{
 		PortBindings: nat.PortMap{
 			nat.Port(cPort): []nat.PortBinding{
@@ -79,14 +81,14 @@ func (c *Client) RunContainer(ctx context.Context, imageName string, handler str
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeBind,
-				Source: sourcePath,
+				Source: absSourcePath,
 				Target: "/var/task",
 			},
 		},
 	}
 
 	log.Debug().Msg("creating container")
-	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, "test")
+	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
 	if err != nil {
 		return fmt.Errorf("creating container: %w", err)
 	}
@@ -131,7 +133,9 @@ func (c *Client) RunContainer(ctx context.Context, imageName string, handler str
 // BuildImage builds a docker image
 //
 // https://stackoverflow.com/a/46518557
-func (c *Client) BuildImage(ctx context.Context, platform string) (string, error) {
+func (c *Client) BuildImage(ctx context.Context) (string, error) {
+	// FIXME: hardcoding
+	platform := "x86_64"
 	riePath, err := fetchRIE(platform)
 	if err != nil {
 		return "", fmt.Errorf("fetching lambda RIE: %w", err)
@@ -171,7 +175,7 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 		return "", fmt.Errorf("building image: %w", err)
 	}
 	defer res.Body.Close()
-	_, _ = io.Copy(os.Stderr, res.Body)
+	_, _ = io.Copy(ioutil.Discard, res.Body)
 	if err != nil {
 		return "", fmt.Errorf("printing build command output: %w", err)
 	}
