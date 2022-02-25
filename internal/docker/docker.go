@@ -15,12 +15,22 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/client"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 )
 
 const samVersion = "1.38.1"
+
+// dockerclient represents the functions that we rely on from the docker API
+type dockerclient interface {
+	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *specs.Platform, containerName string) (container.ContainerCreateCreatedBody, error)
+	ContainerStart(ctx context.Context, containerID string, options types.ContainerStartOptions) error
+	ContainerWait(context.Context, string, container.WaitCondition) (<-chan container.ContainerWaitOKBody, <-chan error)
+	ContainerRemove(ctx context.Context, containerID string, options types.ContainerRemoveOptions) error
+	ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
+}
 
 type RunArgs struct {
 	ExposedPort int
@@ -30,17 +40,13 @@ type RunArgs struct {
 }
 
 type Client struct {
-	cli *client.Client
+	cli dockerclient
 }
 
-func New() (*Client, error) {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		return nil, fmt.Errorf("creating docker client: %w", err)
-	}
+func New(cli dockerclient) *Client {
 	return &Client{
 		cli,
-	}, nil
+	}
 }
 
 func (c *Client) RunContainer(ctx context.Context, imageName string, handler string, sourcePath string, port int) error {
