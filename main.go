@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,13 +19,88 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+func HandleRequest(port int) http.HandlerFunc {
+	type rawResponse struct {
+		StatusCode int    `json:"statusCode"`
+		Body       string `json:"body"`
+	}
+
+	url := fmt.Sprintf("http://localhost:%d/2015-03-31/functions/function/invocations", port)
+	return func(w http.ResponseWriter, r *http.Request) {
+		logger := log.With().Str("endpoint", "/hello").Logger()
+		logger.Debug().Msg("got request")
+
+		var body bytes.Buffer
+		if r.Method == "POST" {
+			_, err := io.Copy(&body, r.Body)
+			if err != nil {
+				logger.Error().Msg("could not copy body from request")
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("could not copy body from request"))
+				return
+			}
+			defer r.Body.Close()
+		} else {
+			body = *bytes.NewBuffer([]byte("{}"))
+		}
+
+		logger.Debug().Msg("creating request to lambda function")
+		req, err := http.NewRequest("POST", url, &body)
+		if err != nil {
+			logger.Error().Msg("could not create child request")
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("could not create child request"))
+			return
+		}
+
+		client := http.Client{}
+		logger.Debug().Msg("sending request to lambda container")
+		resp, err := client.Do(req)
+		if err != nil {
+			logger.Error().Msg("could not send request to lambda container")
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("error sending request"))
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			logger.Error().Int("status", resp.StatusCode).Msg("invalid status code from endpoint")
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("bad status from lambda"))
+			return
+		}
+
+		var resBody bytes.Buffer
+		logger.Debug().Msg("reading response from lambda container")
+		if _, err := io.Copy(&resBody, resp.Body); err != nil {
+			logger.Error().Msg("could not copy from response")
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("could not copy body from response"))
+			return
+		}
+
+		var raw rawResponse
+		if err := json.Unmarshal(resBody.Bytes(), &raw); err != nil {
+			logger.Error().Err(err).Msg("could not parse response from lambda")
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("invalid lambda response"))
+			return
+		}
+
+		logger.Debug().Interface("decoded_response", raw).Msg("response ok")
+		w.WriteHeader(raw.StatusCode)
+		w.Write([]byte(raw.Body))
+	}
+}
+
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{
 		Out: os.Stderr,
 	})
 
-	dockerClient, err := client.NewEnvClient()
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv)
 
 	if err != nil {
 		panic(err)
@@ -60,64 +136,7 @@ func main() {
 	webPort := 8080
 	router := mux.NewRouter()
 	// TODO: somehow use a roundtripper here
-	router.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
-		logger := log.With().Str("endpoint", "/hello").Logger()
-		logger.Debug().Msg("got request")
-
-		var body bytes.Buffer
-		if r.Method == "POST" {
-			_, err := io.Copy(&body, r.Body)
-			if err != nil {
-				logger.Error().Msg("could not copy body from request")
-				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte("could not copy body from request"))
-				return
-			}
-			defer r.Body.Close()
-		} else {
-			body = *bytes.NewBuffer([]byte("{}"))
-		}
-
-		logger.Debug().Msg("creating request to lambda function")
-		req, err := http.NewRequest("POST", "http://localhost:9001/2015-03-31/functions/function/invocations", &body)
-		if err != nil {
-			logger.Error().Msg("could not create child request")
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("could not create child request"))
-			return
-		}
-
-		client := http.Client{}
-		logger.Debug().Msg("sending request to lambda container")
-		resp, err := client.Do(req)
-		if err != nil {
-			logger.Error().Msg("could not send request to lambda container")
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("error sending request"))
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			logger.Error().Int("status", resp.StatusCode).Msg("invalid status code from endpoint")
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("bad status from lambda"))
-			return
-		}
-
-		var resBody bytes.Buffer
-		logger.Debug().Msg("reading response from lambda container")
-		if _, err := io.Copy(&resBody, resp.Body); err != nil {
-			logger.Error().Msg("could not copy from response")
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("could not copy body from response"))
-			return
-		}
-
-		logger.Debug().Msg("response ok")
-		w.WriteHeader(http.StatusOK)
-		w.Write(resBody.Bytes())
-	})
+	router.HandleFunc("/hello", HandleRequest(9001))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf("localhost:%d", webPort),
