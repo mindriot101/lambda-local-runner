@@ -3,6 +3,7 @@ module github.com/mindriot101/lambda-local-runner
 go 1.17
 
 require (
+	github.com/awslabs/goformation v1.4.1
 	github.com/davecgh/go-spew v1.1.1
 	github.com/docker/docker v20.10.12+incompatible
 	github.com/gorilla/mux v1.7.3
@@ -31,6 +32,8 @@ require (
 )
 
 require (
+	github.com/imdario/mergo v0.3.12 // indirect
+	github.com/mitchellh/mapstructure v1.1.2 // indirect
 	github.com/sanathkr/go-yaml v0.0.0-20170819195128-ed9d249f429b // indirect
 	github.com/sanathkr/yaml v0.0.0-20170819201035-0056894fa522 // indirect
 )

@@ -165,8 +165,7 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 		return "", fmt.Errorf("building image: %w", err)
 	}
 	defer res.Body.Close()
-	// wait for the build to complete
-	_, _ = io.Copy(ioutil.Discard, res.Body)
+	_, _ = io.Copy(os.Stderr, res.Body)
 	if err != nil {
 		return "", fmt.Errorf("printing build command output: %w", err)
 	}
