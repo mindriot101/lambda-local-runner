@@ -42,7 +42,14 @@ func main() {
 		panic(err)
 	}
 
-	if err := cli.RunContainer(ctx, "test", imageName, "app.lambda_handler", "testproject/.aws-sam/build/HelloWorldFunction", 9001); err != nil {
+	args := docker.RunContainerArgs{
+		ContainerName: "test",
+		ImageName:     imageName,
+		Handler:       "app.lambda_handler",
+		SourcePath:    "testproject/.aws-sam/build/HelloWorldFunction",
+		Port:          9001,
+	}
+	if err := cli.RunContainer(ctx, args); err != nil {
 		panic(err)
 	}
 }

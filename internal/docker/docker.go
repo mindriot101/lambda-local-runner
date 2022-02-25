@@ -50,25 +50,33 @@ func New(cli dockerclient) *Client {
 	}
 }
 
-func (c *Client) RunContainer(ctx context.Context, containerName string, imageName string, handler string, sourcePath string, port int) error {
+type RunContainerArgs struct {
+	ContainerName string
+	ImageName     string
+	Handler       string
+	SourcePath    string
+	Port          int
+}
+
+func (c *Client) RunContainer(ctx context.Context, args RunContainerArgs) error {
 	// create the container
-	hPort := strconv.Itoa(port)
+	hPort := strconv.Itoa(args.Port)
 	cPort := "8080"
 	config := &container.Config{
-		Image: imageName,
+		Image: args.ImageName,
 		ExposedPorts: nat.PortSet{
 			nat.Port(cPort): {},
 		},
 		Cmd: []string{"/var/aws-lambda-rie", "--log-level", "debug"},
 		Env: []string{
 			"AWS_LAMBDA_FUNCTION_VERSION=$LATEST",
-			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", handler),
+			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", args.Handler),
 			"AWS_LAMBDA_FUNCTION_NAME=HelloWorldFunction",
 			"AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128",
 		},
 	}
 
-	absSourcePath, _ := filepath.Abs(sourcePath)
+	absSourcePath, _ := filepath.Abs(args.SourcePath)
 	hostConfig := &container.HostConfig{
 		PortBindings: nat.PortMap{
 			nat.Port(cPort): []nat.PortBinding{
@@ -88,7 +96,7 @@ func (c *Client) RunContainer(ctx context.Context, containerName string, imageNa
 	}
 
 	log.Debug().Msg("creating container")
-	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, containerName)
+	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, args.ContainerName)
 	if err != nil {
 		return fmt.Errorf("creating container: %w", err)
 	}
