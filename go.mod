@@ -2,7 +2,10 @@ module github.com/mindriot101/lambda-local-runner
 
 go 1.17
 
-require github.com/docker/docker v20.10.12+incompatible
+require (
+	github.com/docker/docker v20.10.12+incompatible
+	github.com/gorilla/mux v1.7.3
+)
 
 require (
 	github.com/Microsoft/go-winio v0.5.1 // indirect
