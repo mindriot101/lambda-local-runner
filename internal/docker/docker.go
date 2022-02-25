@@ -10,17 +10,28 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/client"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/zerolog/log"
 )
 
 const samVersion = "1.38.1"
+
+// dockerclient represents the functions that we rely on from the docker API
+type dockerclient interface {
+	ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *specs.Platform, containerName string) (container.ContainerCreateCreatedBody, error)
+	ContainerStart(ctx context.Context, containerID string, options types.ContainerStartOptions) error
+	ContainerWait(context.Context, string, container.WaitCondition) (<-chan container.ContainerWaitOKBody, <-chan error)
+	ContainerRemove(ctx context.Context, containerID string, options types.ContainerRemoveOptions) error
+	ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
+}
 
 type RunArgs struct {
 	ExposedPort int
@@ -30,37 +41,42 @@ type RunArgs struct {
 }
 
 type Client struct {
-	cli *client.Client
+	cli dockerclient
 }
 
-func New() (*Client, error) {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		return nil, fmt.Errorf("creating docker client: %w", err)
-	}
+func New(cli dockerclient) *Client {
 	return &Client{
 		cli,
-	}, nil
+	}
 }
 
-func (c *Client) RunContainer(ctx context.Context, imageName string, handler string, sourcePath string, port int) error {
+type RunContainerArgs struct {
+	ContainerName string
+	ImageName     string
+	Handler       string
+	SourcePath    string
+	Port          int
+}
+
+func (c *Client) RunContainer(ctx context.Context, args RunContainerArgs) error {
 	// create the container
-	hPort := strconv.Itoa(port)
+	hPort := strconv.Itoa(args.Port)
 	cPort := "8080"
 	config := &container.Config{
-		Image: imageName,
+		Image: args.ImageName,
 		ExposedPorts: nat.PortSet{
 			nat.Port(cPort): {},
 		},
 		Cmd: []string{"/var/aws-lambda-rie", "--log-level", "debug"},
 		Env: []string{
 			"AWS_LAMBDA_FUNCTION_VERSION=$LATEST",
-			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", handler),
+			fmt.Sprintf("AWS_LAMBDA_FUNCTION_HANDLER=%s", args.Handler),
 			"AWS_LAMBDA_FUNCTION_NAME=HelloWorldFunction",
 			"AWS_LAMBDA_FUNCTION_MEMORY_SIZE=128",
 		},
 	}
 
+	absSourcePath, _ := filepath.Abs(args.SourcePath)
 	hostConfig := &container.HostConfig{
 		PortBindings: nat.PortMap{
 			nat.Port(cPort): []nat.PortBinding{
@@ -73,14 +89,14 @@ func (c *Client) RunContainer(ctx context.Context, imageName string, handler str
 		Mounts: []mount.Mount{
 			{
 				Type:   mount.TypeBind,
-				Source: sourcePath,
+				Source: absSourcePath,
 				Target: "/var/task",
 			},
 		},
 	}
 
 	log.Debug().Msg("creating container")
-	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, "test")
+	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, args.ContainerName)
 	if err != nil {
 		return fmt.Errorf("creating container: %w", err)
 	}
@@ -125,7 +141,9 @@ func (c *Client) RunContainer(ctx context.Context, imageName string, handler str
 // BuildImage builds a docker image
 //
 // https://stackoverflow.com/a/46518557
-func (c *Client) BuildImage(ctx context.Context, platform string) (string, error) {
+func (c *Client) BuildImage(ctx context.Context) (string, error) {
+	// FIXME: hardcoding
+	platform := "x86_64"
 	riePath, err := fetchRIE(platform)
 	if err != nil {
 		return "", fmt.Errorf("fetching lambda RIE: %w", err)
@@ -165,7 +183,7 @@ COPY aws-lambda-rie /var/aws-lambda-rie
 		return "", fmt.Errorf("building image: %w", err)
 	}
 	defer res.Body.Close()
-	_, _ = io.Copy(os.Stderr, res.Body)
+	_, _ = io.Copy(ioutil.Discard, res.Body)
 	if err != nil {
 		return "", fmt.Errorf("printing build command output: %w", err)
 	}
