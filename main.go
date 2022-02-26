@@ -130,7 +130,7 @@ func parseTemplate(filename string) (EndpointMapping, error) {
 	return out, nil
 }
 
-func main() {
+func run() error {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{
 		Out: os.Stderr,
@@ -146,7 +146,8 @@ func main() {
 
 	_, err := flags.Parse(&opts)
 	if err != nil {
-		return
+		// special error handling - the flags package prints the help for us
+		return nil
 	}
 	log.Debug().Interface("opts", opts).Msg("parsed command line options")
 
@@ -161,13 +162,13 @@ func main() {
 
 	endpointMapping, err := parseTemplate(opts.Args.Template)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("parsing template: %w", err)
 	}
 	log.Debug().Interface("endpoint_mapping", endpointMapping).Msg("parsed template")
 
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("connecting to docker: %w", err)
 	}
 	cli := docker.New(dockerClient)
 
@@ -183,7 +184,7 @@ func main() {
 
 		imageName, err := cli.BuildImage(context.TODO())
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("building docker image: %w", err)
 		}
 
 		args := docker.RunContainerArgs{
@@ -207,7 +208,7 @@ func main() {
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("creating file system watcher: %w", err)
 	}
 	defer watcher.Close()
 	watcher.Add(opts.RootDir)
@@ -233,7 +234,14 @@ func main() {
 				}
 			}
 		case <-done:
-			return
+			return nil
 		}
+	}
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 }
