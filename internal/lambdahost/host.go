@@ -8,35 +8,35 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type lambdaHost struct {
+type LambdaHost struct {
 	args        docker.RunContainerArgs
 	events      chan instruction
 	host        *docker.Client
 	containerID string
 }
 
-func New(client *docker.Client, args docker.RunContainerArgs) *lambdaHost {
-	return &lambdaHost{
+func New(client *docker.Client, args docker.RunContainerArgs) *LambdaHost {
+	return &LambdaHost{
 		args:   args,
 		host:   client,
 		events: make(chan instruction, 10),
 	}
 }
 
-func (h *lambdaHost) Shutdown() {
+func (h *LambdaHost) Shutdown() {
 	h.send(instructionShutdown)
 }
 
-func (h *lambdaHost) Restart() {
+func (h *LambdaHost) Restart() {
 	h.send(instructionRestart)
 }
 
-func (h *lambdaHost) send(ins instruction) {
+func (h *LambdaHost) send(ins instruction) {
 	log.Debug().Interface("instruction", ins).Msg("sending instruction to host")
 	h.events <- ins
 }
 
-func (h *lambdaHost) Run(done chan<- struct{}) error {
+func (h *LambdaHost) Run(done chan<- struct{}) error {
 	if err := h.runContainer(); err != nil {
 		return fmt.Errorf("running containers: %w", err)
 	}
@@ -68,7 +68,7 @@ func (h *lambdaHost) Run(done chan<- struct{}) error {
 	return nil
 }
 
-func (h *lambdaHost) runContainer() error {
+func (h *LambdaHost) runContainer() error {
 	var err error
 	h.containerID, err = h.host.RunContainer(context.TODO(), h.args)
 	if err != nil {
@@ -78,6 +78,6 @@ func (h *lambdaHost) runContainer() error {
 	return nil
 }
 
-func (h *lambdaHost) RemoveContainer() error {
+func (h *LambdaHost) RemoveContainer() error {
 	return h.host.RemoveContainer(context.TODO(), h.containerID)
 }

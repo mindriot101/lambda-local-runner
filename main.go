@@ -2,12 +2,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 
+	"github.com/awslabs/goformation/v5"
+	"github.com/awslabs/goformation/v5/cloudformation/serverless"
 	"github.com/docker/docker/client"
 	"github.com/fsnotify/fsnotify"
+	"github.com/jessevdk/go-flags"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdahost"
 	"github.com/mindriot101/lambda-local-runner/internal/server"
@@ -15,14 +22,150 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type Method string
+
+const (
+	MethodGET  Method = "GET"
+	MethodPOST        = "POST"
+)
+
+type Endpoint struct {
+	// URLPath is the path of the endpoint (not including host) e.g. `/foo`
+	URLPath string
+	// Method is the HTTP method used by the handler
+	Method Method
+}
+
+// EndpointDefinition defines the information required per endpoint
+// TODO: couples mulotiple concerns into one data structure
+type HandlerDefinition struct {
+	// LogicalID represents the name of the funciton in the cloudformation template
+	LogicalID string
+	// Architecture stores the architecture of the lambda (should be x86_64 if absent)
+	Architecture string
+	// Runtime stores the lambda runtime environment (e.g. python3.8, go1.x etc.)
+	Runtime string
+	// Handler is the name of the handler in a language-specific way
+	Handler string
+	// Port is the internal port of the listening container
+	Port int
+}
+
+// EndpointMapping is a mapping from endpoint definition to the details needed to run the handler
+// {
+// 	(URLPath, Method): (LogicalID, Architecture, Runtime, Handler, Port),
+// }
+type EndpointMapping map[Endpoint]HandlerDefinition
+
+func (e EndpointMapping) MarshalJSON() ([]byte, error) {
+	out := make(map[string]HandlerDefinition)
+	for k, v := range e {
+		out[fmt.Sprintf("%s %s", strings.ToUpper(string(k.Method)), k.URLPath)] = v
+	}
+
+	res, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling endpoint mapping: %w", err)
+	}
+	return res, nil
+}
+
+func parseTemplate(filename string) (EndpointMapping, error) {
+	template, err := goformation.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("parsing template: %w", err)
+	}
+
+	out := make(EndpointMapping)
+
+	for logicalID, resource := range template.Resources {
+		switch resource.AWSCloudFormationType() {
+		case "AWS::Serverless::Function":
+			f, ok := resource.(*serverless.Function)
+			if !ok {
+				return nil, fmt.Errorf("invalid function %s", logicalID)
+			}
+
+			var architecture string
+			if len(f.Architectures) >= 1 {
+				architecture = f.Architectures[0]
+			} else {
+				architecture = "x86_64"
+			}
+
+			runtime := "x86_64"
+			if f.Runtime != "" {
+				runtime = f.Runtime
+			}
+
+			for _, event := range f.Events {
+				if event.Type != "Api" {
+					continue
+				}
+
+				// try to parse the ApiEvent
+				evt := event.Properties.ApiEvent
+				if evt.Method == "" || evt.Path == "" {
+					continue
+				}
+
+				endpoint := Endpoint{
+					URLPath: evt.Path,
+					Method:  Method(evt.Method),
+				}
+				def := HandlerDefinition{
+					LogicalID:    logicalID,
+					Architecture: architecture,
+					Runtime:      runtime,
+					Handler:      f.Handler,
+					Port:         -1,
+				}
+				out[endpoint] = def
+			}
+
+		default:
+		}
+	}
+
+	return out, nil
+}
+
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{
 		Out: os.Stderr,
 	})
 
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv)
+	var opts struct {
+		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
+		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
+		Args    struct {
+			Template string `required:"yes" positional-arg-name:"template"`
+		} `positional-args:"yes" required:"yes"`
+	}
 
+	_, err := flags.Parse(&opts)
+	if err != nil {
+		return
+	}
+	log.Debug().Interface("opts", opts).Msg("parsed command line options")
+
+	switch len(opts.Verbose) {
+	case 0:
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case 1:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
+
+	endpointMapping, err := parseTemplate(opts.Args.Template)
+	if err != nil {
+		panic(err)
+	}
+	log.Debug().Interface("endpoint_mapping", endpointMapping).Msg("parsed template")
+
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		panic(err)
 	}
@@ -31,27 +174,35 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	imageName, err := cli.BuildImage(context.TODO())
-	if err != nil {
-		panic(err)
-	}
-
-	args := docker.RunContainerArgs{
-		ContainerName: "test",
-		ImageName:     imageName,
-		Handler:       "app.lambda_handler",
-		SourcePath:    "testproject/.aws-sam/build/HelloWorldFunction",
-		Port:          9001,
-	}
-
-	host := lambdahost.New(cli, args)
-
-	done := make(chan struct{})
-	go host.Run(done)
-	defer host.RemoveContainer()
-
 	srv := server.New(8080)
-	srv.AddRoute("GET", "/hello", args.Port)
+	containerIdx := 0
+	containerPort := 9001
+	lambdaHosts := []*lambdahost.LambdaHost{}
+	done := make(chan struct{})
+	for endpoint, definition := range endpointMapping {
+
+		imageName, err := cli.BuildImage(context.TODO())
+		if err != nil {
+			panic(err)
+		}
+
+		args := docker.RunContainerArgs{
+			ContainerName: fmt.Sprintf("test-%d", containerIdx),
+			ImageName:     imageName,
+			Handler:       definition.Handler,
+			SourcePath:    path.Join(opts.RootDir, definition.LogicalID),
+			Port:          containerPort,
+		}
+
+		host := lambdahost.New(cli, args)
+		go host.Run(done)
+		defer host.RemoveContainer()
+		lambdaHosts = append(lambdaHosts, host)
+
+		srv.AddRoute(string(endpoint.Method), endpoint.URLPath, args.Port)
+		containerIdx++
+		containerPort++
+	}
 	srv.Run()
 
 	watcher, err := fsnotify.NewWatcher()
@@ -59,14 +210,16 @@ func main() {
 		panic(err)
 	}
 	defer watcher.Close()
-	watcher.Add("testproject/.aws-sam/build/HelloWorldFunction")
+	watcher.Add(opts.RootDir)
 
 	for {
 		select {
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
 			srv.Shutdown()
-			host.Shutdown()
+			for _, host := range lambdaHosts {
+				host.Shutdown()
+			}
 		case event, ok := <-watcher.Events:
 			log.Debug().Interface("event", event).Msg("got event")
 			if !ok {
@@ -75,7 +228,9 @@ func main() {
 
 			if event.Op&fsnotify.Write == fsnotify.Write {
 				log.Debug().Msg("modified file")
-				host.Restart()
+				for _, host := range lambdaHosts {
+					host.Restart()
+				}
 			}
 		case <-done:
 			return

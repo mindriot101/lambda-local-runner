@@ -9,13 +9,20 @@ require (
 )
 
 require (
+	github.com/sanathkr/go-yaml v0.0.0-20170819195128-ed9d249f429b // indirect
+	github.com/sanathkr/yaml v0.0.0-20170819201035-0056894fa522 // indirect
+)
+
+require (
 	github.com/Microsoft/go-winio v0.5.1 // indirect
+	github.com/awslabs/goformation/v5 v5.4.10
 	github.com/containerd/containerd v1.6.0 // indirect
 	github.com/docker/distribution v2.8.0+incompatible // indirect
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/jessevdk/go-flags v1.5.0
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/pkg/errors v0.9.1 // indirect
