@@ -155,6 +155,14 @@ func handleRequest(endpoint string, port int) http.HandlerFunc {
 			return
 		}
 
+		if raw.StatusCode == 0 {
+			// Something must have gone wrong with the upstream container.
+			// Assume this is user error and return a 400.
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(raw.Body))
+			return
+		}
+
 		logger.Debug().Interface("decoded_response", raw).Msg("response ok")
 		w.WriteHeader(raw.StatusCode)
 		w.Write([]byte(raw.Body))
