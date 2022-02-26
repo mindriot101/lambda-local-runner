@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdahost"
+	"github.com/mindriot101/lambda-local-runner/internal/server"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -48,10 +49,15 @@ func main() {
 	go host.Run(done)
 	defer host.RemoveContainer()
 
+	srv := server.New(8080)
+	srv.AddRoute("GET", "/hello", args.Port)
+	srv.Run()
+
 	for {
 		select {
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
+			srv.Shutdown()
 			host.Shutdown()
 		case <-done:
 			return
