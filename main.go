@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/docker/docker/client"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
@@ -24,8 +26,8 @@ func main() {
 	}
 	cli := docker.New(dockerClient)
 
-	// c := make(chan os.Signal, 1)
-	// signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	// ctx, cancel := context.WithCancel(context.Background())
 	// defer cancel()
@@ -54,32 +56,23 @@ func main() {
 	go srv.Run(done)
 	defer srv.removeContainer()
 
-	// log.Debug().Msg("sleeping for 5 seconds")
-	// time.Sleep(5 * time.Second)
-	log.Debug().Msg("restarting containers")
-	srv.Send(instruction{
-		typ: instructionRestart,
-	})
-	// log.Debug().Msg("sleeping for 5 seconds")
-	// time.Sleep(5 * time.Second)
-	log.Debug().Msg("sending shutdown")
-	srv.Send(instruction{
-		typ: instructionShutdown,
-	})
-	log.Debug().Msg("done")
-	<-done
+	for {
+		select {
+		case <-c:
+			log.Debug().Msg("got ctrl-c")
+			srv.Send(instructionShutdown)
+		case <-done:
+			return
+		}
+	}
 }
 
-type instructionType int
+type instruction string
 
 const (
-	instructionShutdown instructionType = iota
-	instructionRestart
+	instructionShutdown instruction = "shutdown"
+	instructionRestart              = "restart"
 )
-
-type instruction struct {
-	typ instructionType
-}
 
 type LambdaHost struct {
 	args        docker.RunContainerArgs
@@ -89,6 +82,7 @@ type LambdaHost struct {
 }
 
 func (h *LambdaHost) Send(ins instruction) {
+	log.Debug().Interface("instruction", ins).Msg("sending instruction to host")
 	h.events <- ins
 }
 
@@ -99,12 +93,17 @@ func (h *LambdaHost) Run(done chan<- struct{}) error {
 	defer h.removeContainer()
 
 	for ins := range h.events {
-		switch ins.typ {
+		logger := log.With().Interface("instruction", ins).Logger()
+		logger.Debug().Msg("got message")
+
+		switch ins {
 		case instructionShutdown:
+			logger.Debug().Msg("shutting down")
 			done <- struct{}{}
 			return nil
 
 		case instructionRestart:
+			logger.Debug().Msg("restarting")
 			h.removeContainer()
 
 			if err := h.runContainer(); err != nil {
@@ -112,7 +111,7 @@ func (h *LambdaHost) Run(done chan<- struct{}) error {
 			}
 
 		default:
-			log.Error().Interface("message_type", ins.typ).Msg("invalid message received")
+			log.Error().Interface("message_type", ins).Msg("invalid message received")
 		}
 	}
 

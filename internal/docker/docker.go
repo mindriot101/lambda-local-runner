@@ -132,6 +132,7 @@ func (c *Client) RunContainer(ctx context.Context, args RunContainerArgs) (strin
 }
 
 func (c *Client) containerWait(ctx context.Context, containerID string) error {
+	logger := log.With().Str("container_id", containerID).Logger()
 	for {
 		res, err := c.cli.ContainerInspect(ctx, containerID)
 		if err != nil {
@@ -139,8 +140,10 @@ func (c *Client) containerWait(ctx context.Context, containerID string) error {
 		}
 		switch res.State.Status {
 		case "running":
+			logger.Debug().Msg("container running")
 			return nil
 		case "removing", "exiting", "dead":
+			logger.Fatal().Msg("container failed to start")
 			return fmt.Errorf("container start failed with state %s", res.State.Status)
 		default:
 		}
