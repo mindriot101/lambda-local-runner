@@ -8,10 +8,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type dockerclient interface {
+	RunContainer(ctx context.Context, args docker.RunContainerArgs) (string, error)
+	RemoveContainer(ctx context.Context, containerID string) error
+}
+
 type LambdaHost struct {
 	args        docker.RunContainerArgs
 	events      chan instruction
-	host        *docker.Client
+	host        dockerclient
 	containerID string
 }
 
