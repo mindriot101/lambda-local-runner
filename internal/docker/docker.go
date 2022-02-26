@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,6 +30,7 @@ type dockerclient interface {
 	ContainerWait(context.Context, string, container.WaitCondition) (<-chan container.ContainerWaitOKBody, <-chan error)
 	ContainerRemove(ctx context.Context, containerID string, options types.ContainerRemoveOptions) error
 	ImageBuild(ctx context.Context, buildContext io.Reader, options types.ImageBuildOptions) (types.ImageBuildResponse, error)
+	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
 }
 
 type RunArgs struct {
@@ -58,7 +58,7 @@ type RunContainerArgs struct {
 	Port          int
 }
 
-func (c *Client) RunContainer(ctx context.Context, args RunContainerArgs) error {
+func (c *Client) RunContainer(ctx context.Context, args RunContainerArgs) (string, error) {
 	// create the container
 	hPort := strconv.Itoa(args.Port)
 	cPort := "8080"
@@ -98,44 +98,63 @@ func (c *Client) RunContainer(ctx context.Context, args RunContainerArgs) error 
 	log.Debug().Msg("creating container")
 	resp, err := c.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, args.ContainerName)
 	if err != nil {
-		return fmt.Errorf("creating container: %w", err)
+		return "", fmt.Errorf("creating container: %w", err)
 	}
 	// start the container
-	log.Debug().Msg("starting container")
+	log.Debug().Str("container_id", resp.ID).Msg("starting container")
 	if err := c.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("starting container: %w", err)
+		return "", fmt.Errorf("starting container: %w", err)
 	}
+
+	log.Debug().Str("container_id", resp.ID).Msg("waiting for container to start")
+	if err := c.containerWait(ctx, resp.ID); err != nil {
+		return "", fmt.Errorf("waiting for container: %w", err)
+	}
+
+	return resp.ID, nil
 
 	// wait for the container to exit
-	log.Debug().Msg("waiting for container")
-	resC, errC := c.cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	// log.Debug().Msg("waiting for container")
+	// resC, errC := c.cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
 
-	// TODO: optionally print container logs
+	// // TODO: optionally print container logs
 
+	// for {
+	// 	select {
+	// 	case msg := <-resC:
+	// 		log.Debug().Interface("msg", msg).Msg("received message")
+	// 	case err := <-errC:
+	// 		if err != nil && !errors.Is(err, context.Canceled) {
+	// 			return "", fmt.Errorf("waiting for container: %w", err)
+	// 		}
+	// 	}
+	// }
+}
+
+func (c *Client) containerWait(ctx context.Context, containerID string) error {
 	for {
-		select {
-		case msg := <-resC:
-			log.Debug().Interface("msg", msg).Msg("received message")
+		res, err := c.cli.ContainerInspect(ctx, containerID)
+		if err != nil {
+			return fmt.Errorf("waiting for container: %w", err)
+		}
+		switch res.State.Status {
+		case "running":
 			return nil
-		case err := <-errC:
-			if err == nil {
-				continue
-			}
-
-			if errors.Is(err, context.Canceled) {
-				log.Debug().Msg("got context cancellation, removing container")
-				err = c.cli.ContainerRemove(context.TODO(), resp.ID, types.ContainerRemoveOptions{
-					Force: true,
-				})
-				if err != nil {
-					log.Warn().Err(err).Msg("error removing container")
-				}
-				return nil
-			} else {
-				return fmt.Errorf("waiting for container: %w", err)
-			}
+		case "removing", "exiting", "dead":
+			return fmt.Errorf("container start failed with state %s", res.State.Status)
+		default:
 		}
 	}
+}
+
+func (c *Client) RemoveContainer(ctx context.Context, containerID string) error {
+	log.Debug().Str("container_id", containerID).Msg("removing container")
+	if err := c.cli.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{
+		Force: true,
+	}); err != nil {
+		return fmt.Errorf("removing container: %w", err)
+	}
+	return nil
 }
 
 // BuildImage builds a docker image
