@@ -88,8 +88,9 @@ func (s *Server) Shutdown() {
 
 func handleRequest(endpoint string, port int) http.HandlerFunc {
 	type rawResponse struct {
-		StatusCode int    `json:"statusCode"`
-		Body       string `json:"body"`
+		StatusCode int               `json:"statusCode"`
+		Body       string            `json:"body"`
+		Headers    map[string]string `json:"headers"`
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/2015-03-31/functions/function/invocations", port)
@@ -164,6 +165,9 @@ func handleRequest(endpoint string, port int) http.HandlerFunc {
 		}
 
 		logger.Debug().Interface("decoded_response", raw).Msg("response ok")
+		for k, v := range raw.Headers {
+			w.Header().Add(k, v)
+		}
 		w.WriteHeader(raw.StatusCode)
 		w.Write([]byte(raw.Body))
 	}
