@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/docker/docker/client"
+	"github.com/fsnotify/fsnotify"
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/mindriot101/lambda-local-runner/internal/lambdahost"
 	"github.com/mindriot101/lambda-local-runner/internal/server"
@@ -53,12 +54,29 @@ func main() {
 	srv.AddRoute("GET", "/hello", args.Port)
 	srv.Run()
 
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		panic(err)
+	}
+	defer watcher.Close()
+	watcher.Add("testproject/.aws-sam/build/HelloWorldFunction")
+
 	for {
 		select {
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
 			srv.Shutdown()
 			host.Shutdown()
+		case event, ok := <-watcher.Events:
+			log.Debug().Interface("event", event).Msg("got event")
+			if !ok {
+				continue
+			}
+
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				log.Debug().Msg("modified file")
+				host.Restart()
+			}
 		case <-done:
 			return
 		}

@@ -12,22 +12,33 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type Server struct {
-	router *mux.Router
-	server *http.Server
+type routeDefinition struct {
+	method string
+	path   string
 	port   int
 }
 
+type Server struct {
+	server *http.Server
+	port   int
+
+	routes []routeDefinition
+}
+
 func New(port int) *Server {
-	router := mux.NewRouter()
 	return &Server{
-		router: router,
-		port:   port,
+		port: port,
 	}
 }
 
 func (s *Server) AddRoute(method string, path string, port int) {
-	s.router.HandleFunc(path, handleRequest(port)).Methods(method)
+	s.routes = append(s.routes, routeDefinition{
+		method: method,
+		path:   path,
+		port:   port,
+	})
+
+	// s.router.HandleFunc(path, handleRequest(port)).Methods(method)
 }
 
 // type cancelFunc func()
@@ -36,9 +47,18 @@ func (s *Server) AddRoute(method string, path string, port int) {
 //
 // Call the cancelFunc to stop the web server
 func (s *Server) Run() error {
+	if s.server != nil {
+		panic("server already created")
+	}
+
+	router := mux.NewRouter()
+	for _, route := range s.routes {
+		router.HandleFunc(route.path, handleRequest(route.port)).Methods(route.method)
+	}
+
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf("localhost:%d", s.port),
-		Handler: s.router,
+		Handler: router,
 	}
 
 	go func() {
@@ -48,14 +68,6 @@ func (s *Server) Run() error {
 	}()
 
 	return nil
-	// return func() {
-	// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	// 	defer cancel()
-	// 	if err := srv.Shutdown(ctx); err != nil {
-	// 		log.Fatal().Err(err).Msg("server shutdown failed")
-	// 	}
-	// 	log.Debug().Msg("server shutdown properly")
-	// }, nil
 }
 
 func (s *Server) Restart() {
@@ -64,9 +76,16 @@ func (s *Server) Restart() {
 }
 
 func (s *Server) Shutdown() {
+	// shortcut if the server hasn't been run yet
+	if s.server == nil {
+		return
+	}
+
 	if err := s.server.Shutdown(context.TODO()); err != nil {
 		log.Fatal().Err(err).Msg("server shutdown failed")
 	}
+
+	s.server = nil
 }
 
 func handleRequest(port int) http.HandlerFunc {
