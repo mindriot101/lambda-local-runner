@@ -37,8 +37,6 @@ func (s *Server) AddRoute(method string, path string, port int) {
 		path:   path,
 		port:   port,
 	})
-
-	// s.router.HandleFunc(path, handleRequest(port)).Methods(method)
 }
 
 // type cancelFunc func()
@@ -53,7 +51,7 @@ func (s *Server) Run() error {
 
 	router := mux.NewRouter()
 	for _, route := range s.routes {
-		router.HandleFunc(route.path, handleRequest(route.port)).Methods(route.method)
+		router.HandleFunc(route.path, handleRequest(route.path, route.port)).Methods(route.method)
 	}
 
 	s.server = &http.Server{
@@ -88,7 +86,7 @@ func (s *Server) Shutdown() {
 	s.server = nil
 }
 
-func handleRequest(port int) http.HandlerFunc {
+func handleRequest(endpoint string, port int) http.HandlerFunc {
 	type rawResponse struct {
 		StatusCode int    `json:"statusCode"`
 		Body       string `json:"body"`
@@ -96,7 +94,7 @@ func handleRequest(port int) http.HandlerFunc {
 
 	url := fmt.Sprintf("http://localhost:%d/2015-03-31/functions/function/invocations", port)
 	return func(w http.ResponseWriter, r *http.Request) {
-		logger := log.With().Str("endpoint", "/hello").Logger()
+		logger := log.With().Str("endpoint", endpoint).Logger()
 		logger.Debug().Msg("got request")
 
 		var body bytes.Buffer
