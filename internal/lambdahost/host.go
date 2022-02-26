@@ -1,0 +1,83 @@
+package lambdahost
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/mindriot101/lambda-local-runner/internal/docker"
+	"github.com/rs/zerolog/log"
+)
+
+type lambdaHost struct {
+	args        docker.RunContainerArgs
+	events      chan instruction
+	host        *docker.Client
+	containerID string
+}
+
+func New(client *docker.Client, args docker.RunContainerArgs) *lambdaHost {
+	return &lambdaHost{
+		args:   args,
+		host:   client,
+		events: make(chan instruction, 10),
+	}
+}
+
+func (h *lambdaHost) Shutdown() {
+	h.send(instructionShutdown)
+}
+
+func (h *lambdaHost) Restart() {
+	h.send(instructionRestart)
+}
+
+func (h *lambdaHost) send(ins instruction) {
+	log.Debug().Interface("instruction", ins).Msg("sending instruction to host")
+	h.events <- ins
+}
+
+func (h *lambdaHost) Run(done chan<- struct{}) error {
+	if err := h.runContainer(); err != nil {
+		return fmt.Errorf("running containers: %w", err)
+	}
+	defer h.RemoveContainer()
+
+	for ins := range h.events {
+		logger := log.With().Interface("instruction", ins).Logger()
+		logger.Debug().Msg("got message")
+
+		switch ins {
+		case instructionShutdown:
+			logger.Debug().Msg("shutting down")
+			done <- struct{}{}
+			return nil
+
+		case instructionRestart:
+			logger.Debug().Msg("restarting")
+			h.RemoveContainer()
+
+			if err := h.runContainer(); err != nil {
+				return fmt.Errorf("running containers: %w", err)
+			}
+
+		default:
+			log.Error().Interface("message_type", ins).Msg("invalid message received")
+		}
+	}
+
+	return nil
+}
+
+func (h *lambdaHost) runContainer() error {
+	var err error
+	h.containerID, err = h.host.RunContainer(context.TODO(), h.args)
+	if err != nil {
+		panic(err)
+	}
+
+	return nil
+}
+
+func (h *lambdaHost) RemoveContainer() error {
+	return h.host.RemoveContainer(context.TODO(), h.containerID)
+}
