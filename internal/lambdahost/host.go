@@ -20,7 +20,7 @@ type LambdaHost struct {
 	containerID string
 }
 
-func New(client *docker.Client, args docker.RunContainerArgs) *LambdaHost {
+func New(client dockerclient, args docker.RunContainerArgs) *LambdaHost {
 	return &LambdaHost{
 		args:   args,
 		host:   client,
