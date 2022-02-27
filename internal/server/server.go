@@ -39,11 +39,7 @@ func (s *Server) AddRoute(method string, path string, port int) {
 	})
 }
 
-// type cancelFunc func()
-
 // Run runs the web server in the background
-//
-// Call the cancelFunc to stop the web server
 func (s *Server) Run() error {
 	if s.server != nil {
 		panic("server already created")
@@ -66,11 +62,6 @@ func (s *Server) Run() error {
 	}()
 
 	return nil
-}
-
-func (s *Server) Restart() {
-	s.Shutdown()
-	s.Run()
 }
 
 func (s *Server) Shutdown() {
