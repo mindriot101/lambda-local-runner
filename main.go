@@ -160,9 +160,10 @@ func run(ctx context.Context, opts Opts) error {
 	containerPort := 9001
 	lambdaHosts := []*lambdahost.LambdaHost{}
 	done := make(chan struct{})
+	dockerCtx := context.Background()
 	for endpoint, definition := range endpointMapping {
 
-		imageName, err := cli.BuildImage(ctx)
+		imageName, err := cli.BuildImage(dockerCtx)
 		if err != nil {
 			return fmt.Errorf("building docker image: %w", err)
 		}
@@ -176,8 +177,8 @@ func run(ctx context.Context, opts Opts) error {
 		}
 
 		host := lambdahost.New(cli, args)
-		go host.Run(ctx, done)
-		defer host.RemoveContainer(ctx)
+		go host.Run(dockerCtx, done)
+		defer host.RemoveContainer(dockerCtx)
 		lambdaHosts = append(lambdaHosts, host)
 
 		srv.AddRoute(string(endpoint.Method), endpoint.URLPath, args.Port)
@@ -195,12 +196,20 @@ func run(ctx context.Context, opts Opts) error {
 
 	for {
 		select {
+		case <-ctx.Done():
+			log.Debug().Msg("got context timeout")
+			srv.Shutdown()
+			for _, host := range lambdaHosts {
+				host.Shutdown()
+			}
+			return nil
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
 			srv.Shutdown()
 			for _, host := range lambdaHosts {
 				host.Shutdown()
 			}
+			return nil
 		case event, ok := <-watcher.Events:
 			log.Debug().Interface("event", event).Msg("got event")
 			if !ok {

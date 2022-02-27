@@ -45,7 +45,7 @@ func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
 	if err := h.runContainer(ctx); err != nil {
 		return fmt.Errorf("running containers: %w", err)
 	}
-	defer h.RemoveContainer(ctx)
+	defer h.RemoveContainer(context.TODO())
 
 	for ins := range h.events {
 		logger := log.With().Interface("instruction", ins).Logger()
@@ -59,7 +59,7 @@ func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
 
 		case instructionRestart:
 			logger.Debug().Msg("restarting")
-			h.RemoveContainer(ctx)
+			h.RemoveContainer(context.TODO())
 
 			if err := h.runContainer(ctx); err != nil {
 				return fmt.Errorf("running containers: %w", err)
