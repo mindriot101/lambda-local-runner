@@ -68,11 +68,6 @@ func (s *Server) Run() error {
 	return nil
 }
 
-func (s *Server) Restart() {
-	s.Shutdown()
-	s.Run()
-}
-
 func (s *Server) Shutdown() {
 	// shortcut if the server hasn't been run yet
 	if s.server == nil {
