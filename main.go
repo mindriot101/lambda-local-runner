@@ -37,7 +37,6 @@ type Endpoint struct {
 }
 
 // EndpointDefinition defines the information required per endpoint
-// TODO: couples mulotiple concerns into one data structure
 type HandlerDefinition struct {
 	// LogicalID represents the name of the funciton in the cloudformation template
 	LogicalID string
@@ -130,36 +129,17 @@ func parseTemplate(filename string) (EndpointMapping, error) {
 	return out, nil
 }
 
-func run() error {
-	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
-	log.Logger = log.Output(zerolog.ConsoleWriter{
-		Out: os.Stderr,
-	})
+type Args struct {
+	Template string `required:"yes" positional-arg-name:"template"`
+}
 
-	var opts struct {
+type Opts struct {
 		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
 		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
-		Args    struct {
-			Template string `required:"yes" positional-arg-name:"template"`
-		} `positional-args:"yes" required:"yes"`
-	}
+		Args    Args `positional-args:"yes" required:"yes"`
+}
 
-	_, err := flags.Parse(&opts)
-	if err != nil {
-		// special error handling - the flags package prints the help for us
-		return nil
-	}
-	log.Debug().Interface("opts", opts).Msg("parsed command line options")
-
-	switch len(opts.Verbose) {
-	case 0:
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case 1:
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	default:
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	}
-
+func run(ctx context.Context, opts Opts) error {
 	endpointMapping, err := parseTemplate(opts.Args.Template)
 	if err != nil {
 		return fmt.Errorf("parsing template: %w", err)
@@ -180,9 +160,10 @@ func run() error {
 	containerPort := 9001
 	lambdaHosts := []*lambdahost.LambdaHost{}
 	done := make(chan struct{})
+	dockerCtx := context.Background()
 	for endpoint, definition := range endpointMapping {
 
-		imageName, err := cli.BuildImage(context.TODO())
+		imageName, err := cli.BuildImage(dockerCtx)
 		if err != nil {
 			return fmt.Errorf("building docker image: %w", err)
 		}
@@ -196,8 +177,8 @@ func run() error {
 		}
 
 		host := lambdahost.New(cli, args)
-		go host.Run(done)
-		defer host.RemoveContainer()
+		go host.Run(dockerCtx, done)
+		defer host.RemoveContainer(dockerCtx)
 		lambdaHosts = append(lambdaHosts, host)
 
 		srv.AddRoute(string(endpoint.Method), endpoint.URLPath, args.Port)
@@ -215,12 +196,20 @@ func run() error {
 
 	for {
 		select {
+		case <-ctx.Done():
+			log.Debug().Msg("got context timeout")
+			srv.Shutdown()
+			for _, host := range lambdaHosts {
+				host.Shutdown()
+			}
+			return nil
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
 			srv.Shutdown()
 			for _, host := range lambdaHosts {
 				host.Shutdown()
 			}
+			return nil
 		case event, ok := <-watcher.Events:
 			log.Debug().Interface("event", event).Msg("got event")
 			if !ok {
@@ -240,7 +229,30 @@ func run() error {
 }
 
 func main() {
-	if err := run(); err != nil {
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	log.Logger = log.Output(zerolog.ConsoleWriter{
+		Out: os.Stderr,
+	})
+
+	var opts Opts
+	_, err := flags.Parse(&opts)
+	if err != nil {
+		// special error handling - the flags package prints the help for us
+		os.Exit(1)
+	}
+	log.Debug().Interface("opts", opts).Msg("parsed command line options")
+
+	switch len(opts.Verbose) {
+	case 0:
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case 1:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	}
+
+	ctx := context.TODO()
+	if err := run(ctx, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

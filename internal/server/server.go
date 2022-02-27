@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
@@ -70,7 +71,10 @@ func (s *Server) Shutdown() {
 		return
 	}
 
-	if err := s.server.Shutdown(context.TODO()); err != nil {
+	// add timeout to server shutdown in case of hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.server.Shutdown(ctx); err != nil {
 		log.Fatal().Err(err).Msg("server shutdown failed")
 	}
 

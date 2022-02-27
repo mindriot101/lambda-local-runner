@@ -41,11 +41,11 @@ func (h *LambdaHost) send(ins instruction) {
 	h.events <- ins
 }
 
-func (h *LambdaHost) Run(done chan<- struct{}) error {
-	if err := h.runContainer(); err != nil {
+func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
+	if err := h.runContainer(ctx); err != nil {
 		return fmt.Errorf("running containers: %w", err)
 	}
-	defer h.RemoveContainer()
+	defer h.RemoveContainer(context.TODO())
 
 	for ins := range h.events {
 		logger := log.With().Interface("instruction", ins).Logger()
@@ -59,9 +59,9 @@ func (h *LambdaHost) Run(done chan<- struct{}) error {
 
 		case instructionRestart:
 			logger.Debug().Msg("restarting")
-			h.RemoveContainer()
+			h.RemoveContainer(context.TODO())
 
-			if err := h.runContainer(); err != nil {
+			if err := h.runContainer(ctx); err != nil {
 				return fmt.Errorf("running containers: %w", err)
 			}
 
@@ -73,9 +73,9 @@ func (h *LambdaHost) Run(done chan<- struct{}) error {
 	return nil
 }
 
-func (h *LambdaHost) runContainer() error {
+func (h *LambdaHost) runContainer(ctx context.Context) error {
 	var err error
-	h.containerID, err = h.host.RunContainer(context.TODO(), h.args)
+	h.containerID, err = h.host.RunContainer(ctx, h.args)
 	if err != nil {
 		panic(err)
 	}
@@ -83,6 +83,6 @@ func (h *LambdaHost) runContainer() error {
 	return nil
 }
 
-func (h *LambdaHost) RemoveContainer() error {
-	return h.host.RemoveContainer(context.TODO(), h.containerID)
+func (h *LambdaHost) RemoveContainer(ctx context.Context) error {
+	return h.host.RemoveContainer(ctx, h.containerID)
 }
