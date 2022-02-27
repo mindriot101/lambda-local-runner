@@ -1,6 +1,10 @@
 .PHONY: help
 help:
-	@echo "Commands: coverage, test, integration-test"
+	@echo "Commands: build, coverage, test, integration-test"
+
+.PHONY: build
+build:
+	CGO_ENABLED=0 go build -ldflags '-w -s' -o lambda-local-runner
 
 .PHONY: coverage
 coverage:
