@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +21,25 @@ import (
 // container with the local project.
 
 var integration = flag.Bool("integration", false, "run integration tests")
+
+// TestMain ensures that the SAM build output directory exists
+func TestMain(m *testing.M) {
+	info, err := os.Stat("testproject/.aws-sam/build/HelloWorldFunction")
+	if err != nil || !info.IsDir() {
+		// sam directory doesn't exist
+		cmd := exec.Command("sam", "build")
+		cmd.Dir = "testproject"
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, "PIP_REQUIRE_VIRTUALENV=0")
+		cmd.Stdout = io.Discard
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to build SAM project: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	os.Exit(m.Run())
+}
 
 func TestIntegration(t *testing.T) {
 	if !*integration {
