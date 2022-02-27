@@ -24,6 +24,7 @@ var integration = flag.Bool("integration", false, "run integration tests")
 
 // TestMain ensures that the SAM build output directory exists
 func TestMain(m *testing.M) {
+	flag.Parse()
 	if *integration {
 		info, err := os.Stat("testproject/.aws-sam/build/HelloWorldFunction")
 		if err != nil || !info.IsDir() {
