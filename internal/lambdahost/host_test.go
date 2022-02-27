@@ -27,11 +27,12 @@ func (m *mockClient) RemoveContainer(ctx context.Context, containerID string) er
 }
 
 func TestShutdown(t *testing.T) {
+	ctx := context.Background()
 	args := docker.RunContainerArgs{}
 	client := &mockClient{}
 	host := New(client, args)
 	done := make(chan struct{})
-	go host.Run(done)
+	go host.Run(ctx, done)
 	host.Shutdown()
 	<-done
 
@@ -50,11 +51,12 @@ func TestShutdown(t *testing.T) {
 }
 
 func TestRestart(t *testing.T) {
+	ctx := context.Background()
 	args := docker.RunContainerArgs{}
 	client := &mockClient{}
 	host := New(client, args)
 	done := make(chan struct{})
-	go host.Run(done)
+	go host.Run(ctx, done)
 	host.Restart()
 	host.Shutdown()
 	<-done
