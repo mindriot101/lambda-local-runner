@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,7 +16,13 @@ import (
 // This package contains the integration tests which spin up a real docker
 // container with the local project.
 
+var integration = flag.Bool("integration", false, "run integration tests")
+
 func TestIntegration(t *testing.T) {
+	if !*integration {
+		t.Skip("not running integration tests")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	opts := Opts{
 		RootDir: "testproject/.aws-sam/build",
