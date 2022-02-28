@@ -44,6 +44,45 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+type FirstResponse struct {
+	Message string `json:"message"`
+}
+
+func (r *FirstResponse) CheckMatches(t *testing.T, body []byte) {
+	var got FirstResponse
+	err := json.Unmarshal(body, &got)
+	if err != nil {
+		t.Fatalf("invalid json response")
+	}
+	if r.Message != got.Message {
+		t.Fatalf("invalid message (response: %s, expected %s)", got.Message, r.Message)
+	}
+
+}
+
+type SecondResponse struct {
+	Message string `json:"message"`
+	Foo     int    `json:"foo"`
+}
+
+func (r *SecondResponse) CheckMatches(t *testing.T, body []byte) {
+	var got SecondResponse
+	err := json.Unmarshal(body, &got)
+	if err != nil {
+		t.Fatalf("invalid json response")
+	}
+	if r.Message != got.Message {
+		t.Fatalf("invalid message (response: %s, expected %s)", got.Message, r.Message)
+	}
+	if r.Foo != got.Foo {
+		t.Fatalf("invalid foo (response: %d, expected %d)", got.Foo, r.Foo)
+	}
+}
+
+type expectation interface {
+	CheckMatches(t *testing.T, body []byte)
+}
+
 func TestIntegration(t *testing.T) {
 	if !*integration {
 		t.Skip("not running integration tests")
@@ -65,10 +104,17 @@ func TestIntegration(t *testing.T) {
 
 	errCh := make(chan error)
 	go func() {
+		log.Printf("starting web server")
 		errCh <- run(ctx, opts)
+		log.Printf("shutting down web server")
 	}()
 
-	assertHTTPResponse(t, host, port)
+	assertHTTPResponse(t, host, port, &FirstResponse{
+		Message: "hello world",
+	})
+
+	// TODO: trigger reload of the source
+
 	cancel()
 
 	err := <-errCh
@@ -77,7 +123,7 @@ func TestIntegration(t *testing.T) {
 	}
 }
 
-func assertHTTPResponse(t *testing.T, host string, port int) {
+func assertHTTPResponse(t *testing.T, host string, port int, expected expectation) {
 	http5XXCount := 0
 	for {
 		// try to make an HTTP request
@@ -119,18 +165,8 @@ func assertHTTPResponse(t *testing.T, host string, port int) {
 			t.Fatalf("could not read response body: %v", err)
 		}
 
-		type responsePayload struct {
-			Message string `json:"message"`
-		}
-		var p responsePayload
-		if err := json.Unmarshal(b, &p); err != nil {
-			t.Fatalf("invalid JSON in response: %v", err)
-		}
+		expected.CheckMatches(t, b)
 
-		if p.Message != "hello world" {
-			t.Fatalf("invalid response body, got %s expected `hello world`", p.Message)
-		}
-
-		break
+		return
 	}
 }
