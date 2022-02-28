@@ -53,13 +53,25 @@ func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
 		switch ins {
 		case instructionShutdown:
 			logger.Debug().Msg("shutting down")
-			h.RemoveContainer(context.TODO())
+			if err := h.RemoveContainer(context.TODO()); err != nil {
+				logger.
+					Warn().
+					Err(err).
+					Str("container_name", h.args.ContainerName).
+					Msg("could not remove the lambda container")
+			}
 			done <- struct{}{}
 			return nil
 
 		case instructionRestart:
 			logger.Debug().Msg("restarting")
-			h.RemoveContainer(context.TODO())
+			if err := h.RemoveContainer(context.TODO()); err != nil {
+				logger.
+					Warn().
+					Err(err).
+					Str("container_name", h.args.ContainerName).
+					Msg("could not remove the lambda container")
+			}
 
 			if err := h.runContainer(ctx); err != nil {
 				return fmt.Errorf("running containers: %w", err)
