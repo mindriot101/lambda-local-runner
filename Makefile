@@ -18,3 +18,7 @@ integration-test:
 .PHONY: test
 test:
 	go test ./...
+
+.PHONY: test-all
+test-all:
+	$(MAKE) test integration-test
