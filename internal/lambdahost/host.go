@@ -45,10 +45,11 @@ func (h *LambdaHost) send(ins instruction) {
 	h.events <- ins
 }
 
-func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
+func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}, runWg *sync.WaitGroup) error {
 	if err := h.runContainer(ctx); err != nil {
 		return fmt.Errorf("running containers: %w", err)
 	}
+	runWg.Done()
 
 	for ins := range h.events {
 		logger := log.With().Interface("instruction", ins).Logger()

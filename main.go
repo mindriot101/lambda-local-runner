@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/awslabs/goformation/v5"
@@ -134,9 +135,9 @@ type Args struct {
 }
 
 type Opts struct {
-		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
-		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
-		Args    Args `positional-args:"yes" required:"yes"`
+	Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
+	RootDir string `short:"r" long:"root"    description:"Unpacked root directory"      required:"yes"`
+	Args    Args   `                                                                    required:"yes" positional-args:"yes"`
 }
 
 func run(ctx context.Context, opts Opts) error {
@@ -161,7 +162,11 @@ func run(ctx context.Context, opts Opts) error {
 	lambdaHosts := []*lambdahost.LambdaHost{}
 	done := make(chan struct{})
 	dockerCtx := context.Background()
+
+	endpointStrings := []string{}
+	var wg sync.WaitGroup
 	for endpoint, definition := range endpointMapping {
+		wg.Add(1)
 
 		imageName, err := cli.BuildImage(dockerCtx)
 		if err != nil {
@@ -177,15 +182,27 @@ func run(ctx context.Context, opts Opts) error {
 		}
 
 		host := lambdahost.New(cli, args)
-		go host.Run(dockerCtx, done)
+		go host.Run(dockerCtx, done, &wg)
 		defer host.RemoveContainer(dockerCtx)
 		lambdaHosts = append(lambdaHosts, host)
 
 		srv.AddRoute(string(endpoint.Method), endpoint.URLPath, args.Port)
 		containerIdx++
 		containerPort++
+
+		endpointStrings = append(endpointStrings,
+			fmt.Sprintf(" - %s http://localhost:8080%s\n", string(endpoint.Method), endpoint.URLPath))
 	}
+
 	srv.Run()
+
+	// print information for the user
+	wg.Wait()
+	fmt.Fprintf(os.Stderr, "Server listening on http://localhost:8080\n")
+	fmt.Fprintf(os.Stderr, "Available endpoints:\n")
+	for _, s := range endpointStrings {
+		fmt.Fprintf(os.Stderr, s)
+	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -193,6 +210,11 @@ func run(ctx context.Context, opts Opts) error {
 	}
 	defer watcher.Close()
 	watcher.Add(opts.RootDir)
+
+	// helper function to print info for the user
+	printShuttingDown := func() {
+		fmt.Fprintf(os.Stderr, "Shutting down the server\n")
+	}
 
 	for {
 		select {
@@ -202,6 +224,7 @@ func run(ctx context.Context, opts Opts) error {
 			for _, host := range lambdaHosts {
 				host.Shutdown()
 			}
+			printShuttingDown()
 			return nil
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
@@ -209,6 +232,7 @@ func run(ctx context.Context, opts Opts) error {
 			for _, host := range lambdaHosts {
 				host.Shutdown()
 			}
+			printShuttingDown()
 			return nil
 		case event, ok := <-watcher.Events:
 			log.Debug().Interface("event", event).Msg("got event")
@@ -240,16 +264,17 @@ func main() {
 		// special error handling - the flags package prints the help for us
 		os.Exit(1)
 	}
-	log.Debug().Interface("opts", opts).Msg("parsed command line options")
 
 	switch len(opts.Verbose) {
 	case 0:
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case 1:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	default:
+	case 1:
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	}
+
+	log.Debug().Interface("opts", opts).Msg("parsed command line options")
 
 	ctx := context.TODO()
 	if err := run(ctx, opts); err != nil {
