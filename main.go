@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/awslabs/goformation/v5"
@@ -163,7 +164,9 @@ func run(ctx context.Context, opts Opts) error {
 	dockerCtx := context.Background()
 
 	endpointStrings := []string{}
+	var wg sync.WaitGroup
 	for endpoint, definition := range endpointMapping {
+		wg.Add(1)
 
 		imageName, err := cli.BuildImage(dockerCtx)
 		if err != nil {
@@ -179,7 +182,7 @@ func run(ctx context.Context, opts Opts) error {
 		}
 
 		host := lambdahost.New(cli, args)
-		go host.Run(dockerCtx, done)
+		go host.Run(dockerCtx, done, &wg)
 		defer host.RemoveContainer(dockerCtx)
 		lambdaHosts = append(lambdaHosts, host)
 
@@ -194,6 +197,7 @@ func run(ctx context.Context, opts Opts) error {
 	srv.Run()
 
 	// print information for the user
+	wg.Wait()
 	fmt.Fprintf(os.Stderr, "Server listening on http://localhost:8080\n")
 	fmt.Fprintf(os.Stderr, "Available endpoints:\n")
 	for _, s := range endpointStrings {

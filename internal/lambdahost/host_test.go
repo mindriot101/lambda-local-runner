@@ -54,7 +54,9 @@ func TestShutdown(t *testing.T) {
 	client := &mockClient{}
 	host := New(client, args)
 	done := make(chan struct{})
-	go host.Run(ctx, done)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go host.Run(ctx, done, &wg)
 	host.Shutdown()
 	<-done
 
@@ -79,7 +81,9 @@ func TestRestart(t *testing.T) {
 	client := &mockClient{}
 	host := New(client, args)
 	done := make(chan struct{})
-	go host.Run(ctx, done)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go host.Run(ctx, done, &wg)
 	host.Restart()
 	host.Shutdown()
 	<-done
