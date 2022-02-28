@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: format
         name: check format
-        entry: bash -c 'if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi'
+        entry: make check-format
         language: system
         always_run: false
         verbose: false

@@ -22,3 +22,11 @@ test:
 .PHONY: test-all
 test-all:
 	$(MAKE) test integration-test
+
+.PHONY: check-format
+check-format:
+	@if [ "$(shell gofmt -s -l . | wc -l)" -gt 0 ]; then \
+		echo "Would reformat:"; \
+		gofmt -s -l .; \
+		exit 1; \
+	fi
