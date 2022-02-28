@@ -70,6 +70,14 @@ func (e EndpointMapping) MarshalJSON() ([]byte, error) {
 	return res, nil
 }
 
+// containerName generates the container name that is meant to be both:
+// * informative, and
+// * unique
+func containerName(endpoint Endpoint, definition HandlerDefinition, containerIdx int) string {
+	sanitisedURL := strings.ReplaceAll(endpoint.URLPath, "/", "_")
+	return fmt.Sprintf("llr-%s-%s%s-%d", definition.LogicalID, endpoint.Method, sanitisedURL, containerIdx)
+}
+
 func parseTemplate(filename string) (EndpointMapping, error) {
 	template, err := goformation.Open(filename)
 	if err != nil {
@@ -175,8 +183,12 @@ func run(ctx context.Context, opts Opts) error {
 			return fmt.Errorf("building docker image: %w", err)
 		}
 
+		containerName := containerName(endpoint, definition, containerIdx)
+
+		// FIXME: this leaks implementation details about the docker layer to
+		// the lambda host
 		args := docker.RunContainerArgs{
-			ContainerName: fmt.Sprintf("test-%d", containerIdx),
+			ContainerName: containerName,
 			ImageName:     imageName,
 			Handler:       definition.Handler,
 			SourcePath:    path.Join(opts.RootDir, definition.LogicalID),
