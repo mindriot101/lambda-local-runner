@@ -45,7 +45,6 @@ func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
 	if err := h.runContainer(ctx); err != nil {
 		return fmt.Errorf("running containers: %w", err)
 	}
-	defer h.RemoveContainer(context.TODO())
 
 	for ins := range h.events {
 		logger := log.With().Interface("instruction", ins).Logger()
@@ -54,6 +53,7 @@ func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
 		switch ins {
 		case instructionShutdown:
 			logger.Debug().Msg("shutting down")
+			h.RemoveContainer(context.TODO())
 			done <- struct{}{}
 			return nil
 
