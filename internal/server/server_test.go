@@ -3,7 +3,7 @@ package server
 import "testing"
 
 func TestAddRoutes(t *testing.T) {
-	server := New(0)
+	server := New("localhost", 0)
 	server.AddRoute("GET", "/hello", 9002)
 
 	if len(server.routes) != 1 {

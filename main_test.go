@@ -49,12 +49,17 @@ func TestIntegration(t *testing.T) {
 		t.Skip("not running integration tests")
 	}
 
+	host := "localhost"
+	port := 8080
+
 	ctx, cancel := context.WithCancel(context.Background())
 	opts := Opts{
 		RootDir: "testproject/.aws-sam/build",
 		Args: Args{
 			Template: "testproject/template.yaml",
 		},
+		Host: host,
+		Port: port,
 		Verbose: []bool{true, true, true},
 	}
 
@@ -67,7 +72,7 @@ func TestIntegration(t *testing.T) {
 	for {
 		// try to make an HTTP request
 		log.Printf("making HTTP request")
-		resp, err := http.Get("http://localhost:8080/hello")
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d/hello", host, port))
 		if err != nil {
 			if _, ok := err.(net.Error); ok {
 				if strings.Contains(err.Error(), "connection refused") {
