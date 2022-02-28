@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/rs/zerolog/log"
@@ -95,7 +96,7 @@ func (h *LambdaHost) runContainer(ctx context.Context) error {
 
 	h.containerID, err = h.host.RunContainer(ctx, h.args)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("running container: %w", err)
 	}
 
 	return nil
@@ -104,6 +105,9 @@ func (h *LambdaHost) runContainer(ctx context.Context) error {
 func (h *LambdaHost) RemoveContainer(ctx context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	return h.host.RemoveContainer(ctx, h.containerID)
 }
