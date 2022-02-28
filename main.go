@@ -260,7 +260,6 @@ func main() {
 		// special error handling - the flags package prints the help for us
 		os.Exit(1)
 	}
-	log.Debug().Interface("opts", opts).Msg("parsed command line options")
 
 	switch len(opts.Verbose) {
 	case 0:
@@ -270,6 +269,8 @@ func main() {
 	default:
 		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	}
+
+	log.Debug().Interface("opts", opts).Msg("parsed command line options")
 
 	ctx := context.TODO()
 	if err := run(ctx, opts); err != nil {
