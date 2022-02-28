@@ -134,9 +134,9 @@ type Args struct {
 }
 
 type Opts struct {
-		Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
-		RootDir string `short:"r" long:"root" description:"Unpacked root directory" required:"yes"`
-		Args    Args `positional-args:"yes" required:"yes"`
+	Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
+	RootDir string `short:"r" long:"root"    description:"Unpacked root directory"      required:"yes"`
+	Args    Args   `                                                                    required:"yes" positional-args:"yes"`
 }
 
 func run(ctx context.Context, opts Opts) error {
