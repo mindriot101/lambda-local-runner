@@ -43,6 +43,8 @@ func (s *Server) AddRoute(method string, path string, port int) {
 // Run runs the web server in the background
 func (s *Server) Run() error {
 	if s.server != nil {
+		// NOTE: panic is allowed here, as it indicates a programming error,
+		// not a runtime error.
 		panic("server already created")
 	}
 
