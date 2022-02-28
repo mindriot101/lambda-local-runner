@@ -16,11 +16,11 @@ type dockerclient interface {
 }
 
 type LambdaHost struct {
-	args        docker.RunContainerArgs
-	events      chan instruction
-	host        dockerclient
+	args   docker.RunContainerArgs
+	events chan instruction
+	host   dockerclient
 
-	mu sync.Mutex
+	mu          sync.Mutex
 	containerID string
 }
 

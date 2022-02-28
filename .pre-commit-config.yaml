@@ -2,6 +2,17 @@
 repos:
   - repo: local
     hooks:
+      - id: format
+        name: check format
+        entry: bash -c 'if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi'
+        language: system
+        always_run: false
+        verbose: false
+        pass_filenames: false
+        stages:
+          - commit
+        types:
+          - go
       - id: go test
         name: go test
         entry: go test -race ./...

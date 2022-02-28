@@ -21,7 +21,7 @@ type routeDefinition struct {
 
 type Server struct {
 	server *http.Server
-	host string
+	host   string
 	port   int
 
 	routes []routeDefinition
