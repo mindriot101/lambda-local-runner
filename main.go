@@ -161,6 +161,8 @@ func run(ctx context.Context, opts Opts) error {
 	lambdaHosts := []*lambdahost.LambdaHost{}
 	done := make(chan struct{})
 	dockerCtx := context.Background()
+
+	endpointStrings := []string{}
 	for endpoint, definition := range endpointMapping {
 
 		imageName, err := cli.BuildImage(dockerCtx)
@@ -184,8 +186,19 @@ func run(ctx context.Context, opts Opts) error {
 		srv.AddRoute(string(endpoint.Method), endpoint.URLPath, args.Port)
 		containerIdx++
 		containerPort++
+
+		endpointStrings = append(endpointStrings,
+			fmt.Sprintf(" - %s http://localhost:8080%s\n", string(endpoint.Method), endpoint.URLPath))
 	}
+
 	srv.Run()
+
+	// print information for the user
+	fmt.Fprintf(os.Stderr, "Server listening on http://localhost:8080\n")
+	fmt.Fprintf(os.Stderr, "Available endpoints:\n")
+	for _, s := range endpointStrings {
+		fmt.Fprintf(os.Stderr, s)
+	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -193,6 +206,11 @@ func run(ctx context.Context, opts Opts) error {
 	}
 	defer watcher.Close()
 	watcher.Add(opts.RootDir)
+
+	// helper function to print info for the user
+	printShuttingDown := func() {
+		fmt.Fprintf(os.Stderr, "Shutting down the server\n")
+	}
 
 	for {
 		select {
@@ -202,6 +220,7 @@ func run(ctx context.Context, opts Opts) error {
 			for _, host := range lambdaHosts {
 				host.Shutdown()
 			}
+			printShuttingDown()
 			return nil
 		case <-c:
 			log.Debug().Msg("got ctrl-c")
@@ -209,6 +228,7 @@ func run(ctx context.Context, opts Opts) error {
 			for _, host := range lambdaHosts {
 				host.Shutdown()
 			}
+			printShuttingDown()
 			return nil
 		case event, ok := <-watcher.Events:
 			log.Debug().Interface("event", event).Msg("got event")
