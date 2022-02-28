@@ -124,6 +124,8 @@ func TestIntegration(t *testing.T) {
 }
 
 func assertHTTPResponse(t *testing.T, host string, port int, expected expectation) {
+	t.Helper()
+
 	http5XXCount := 0
 	for {
 		// try to make an HTTP request
