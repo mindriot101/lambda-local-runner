@@ -244,11 +244,11 @@ func main() {
 
 	switch len(opts.Verbose) {
 	case 0:
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case 1:
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	default:
+	case 1:
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	}
 
 	ctx := context.TODO()
