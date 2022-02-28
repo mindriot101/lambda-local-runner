@@ -2,10 +2,12 @@ package lambdahost
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
+	"github.com/rs/zerolog"
 )
 
 type call struct {
@@ -15,10 +17,6 @@ type call struct {
 type mockClient struct {
 	mu    sync.Mutex
 	calls []call
-}
-
-func (m *mockClient) NumCalls() int {
-	return len(m.Calls())
 }
 
 func (m *mockClient) Calls() []call {
@@ -42,6 +40,12 @@ func (m *mockClient) RemoveContainer(ctx context.Context, containerID string) er
 
 	m.calls = append(m.calls, call{"RemoveContainer"})
 	return nil
+}
+
+func TestMain(m *testing.M) {
+	zerolog.SetGlobalLevel(zerolog.WarnLevel)
+
+	os.Exit(m.Run())
 }
 
 func TestShutdown(t *testing.T) {
