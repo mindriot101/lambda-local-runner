@@ -137,7 +137,8 @@ type Args struct {
 type Opts struct {
 	Verbose []bool `short:"v" long:"verbose" description:"Print verbose logging output"`
 	RootDir string `short:"r" long:"root"    description:"Unpacked root directory"      required:"yes"`
-	Args    Args   `                                                                    required:"yes" positional-args:"yes"`
+	Port    int    `short:"p" long:"port"    description:"Server port to listen on"                    default:"8080"`
+	Args    Args   `                                                                    required:"yes"                positional-args:"yes"`
 }
 
 func run(ctx context.Context, opts Opts) error {
@@ -156,7 +157,7 @@ func run(ctx context.Context, opts Opts) error {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	srv := server.New(8080)
+	srv := server.New(opts.Port)
 	containerIdx := 0
 	containerPort := 9001
 	lambdaHosts := []*lambdahost.LambdaHost{}
@@ -191,14 +192,14 @@ func run(ctx context.Context, opts Opts) error {
 		containerPort++
 
 		endpointStrings = append(endpointStrings,
-			fmt.Sprintf(" - %s http://localhost:8080%s\n", string(endpoint.Method), endpoint.URLPath))
+			fmt.Sprintf(" - %s http://localhost:%d%s\n", string(endpoint.Method), opts.Port, endpoint.URLPath))
 	}
 
 	srv.Run()
 
 	// print information for the user
 	wg.Wait()
-	fmt.Fprintf(os.Stderr, "Server listening on http://localhost:8080\n")
+	fmt.Fprintf(os.Stderr, "Server listening on http://localhost:%d\n", opts.Port)
 	fmt.Fprintf(os.Stderr, "Available endpoints:\n")
 	for _, s := range endpointStrings {
 		fmt.Fprintf(os.Stderr, s)
