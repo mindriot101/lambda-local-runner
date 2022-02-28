@@ -1,5 +1,7 @@
 # Lambda Local Runner
 
+![CI status](https://github.com/mindriot101/lambda-local-runner/actions/workflows/go.yml/badge.svg?branch=main)
+
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
