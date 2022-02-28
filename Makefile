@@ -13,11 +13,11 @@ coverage:
 
 .PHONY: integration-test
 integration-test:
-	go test main.go main_test.go -integration
+	go test -race main.go main_test.go -integration
 
 .PHONY: test
 test:
-	go test ./...
+	go test -race ./...
 
 .PHONY: test-all
 test-all:

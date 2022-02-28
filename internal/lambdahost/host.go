@@ -3,6 +3,7 @@ package lambdahost
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/mindriot101/lambda-local-runner/internal/docker"
 	"github.com/rs/zerolog/log"
@@ -17,6 +18,8 @@ type LambdaHost struct {
 	args        docker.RunContainerArgs
 	events      chan instruction
 	host        dockerclient
+
+	mu sync.Mutex
 	containerID string
 }
 
@@ -87,6 +90,9 @@ func (h *LambdaHost) Run(ctx context.Context, done chan<- struct{}) error {
 
 func (h *LambdaHost) runContainer(ctx context.Context) error {
 	var err error
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	h.containerID, err = h.host.RunContainer(ctx, h.args)
 	if err != nil {
 		panic(err)
@@ -96,5 +102,8 @@ func (h *LambdaHost) runContainer(ctx context.Context) error {
 }
 
 func (h *LambdaHost) RemoveContainer(ctx context.Context) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	return h.host.RemoveContainer(ctx, h.containerID)
 }
