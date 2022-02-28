@@ -12,8 +12,8 @@ func TestAddRoutes(t *testing.T) {
 
 	checkRouteDefinition(t, server.routes[0], routeDefinition{
 		method: "GET",
-		path: "/hello",
-		port: 9002,
+		path:   "/hello",
+		port:   9002,
 	})
 }
 

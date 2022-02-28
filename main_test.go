@@ -58,8 +58,8 @@ func TestIntegration(t *testing.T) {
 		Args: Args{
 			Template: "testproject/template.yaml",
 		},
-		Host: host,
-		Port: port,
+		Host:    host,
+		Port:    port,
 		Verbose: []bool{true, true, true},
 	}
 
