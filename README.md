@@ -5,6 +5,7 @@
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Contributing](#contributing)
 
 This program allows you to run your lambda functions behind a REST interface (like a local copy of API Gateway). It provides similar functionality to [AWS SAM][aws-sam] without specifically being tied to AWS or the serverless model. This means that the lambda functions do not have to be defined via SAM. Also SAM builds and deploys your lambda functions, whereas this program is designed just to run locally.
 
@@ -102,5 +103,14 @@ curl http://localhost:8080/hello
 # => {"message": "Hello world"}
 ```
 
+## Contributing
+
+First of all: thank you for wanting to contribute to this project. This is a side-project and so likely won't have the attention from me that it deserves.
+
+- If you have encountered a problem or want to suggest a feature, please feel free to [create an issue][create-issue].
+- If you want to contribute changes, please feel free to [submit a pull request][pull-request]
+
 [aws-sam]: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html
 [releases]: https://github.com/mindriot101/lambda-local-runner/releases
+[create-issue]: https://github.com/mindriot101/lambda-local-runner/issues/new
+[pull-request]: https://github.com/mindriot101/lambda-local-runner/compare
