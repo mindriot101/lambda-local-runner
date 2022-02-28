@@ -68,6 +68,16 @@ func TestIntegration(t *testing.T) {
 		errCh <- run(ctx, opts)
 	}()
 
+	assertHTTPResponse(t, host, port)
+	cancel()
+
+	err := <-errCh
+	if err != nil {
+		t.Fatalf("error from run function: %v", err)
+	}
+}
+
+func assertHTTPResponse(t *testing.T, host string, port int) {
 	http5XXCount := 0
 	for {
 		// try to make an HTTP request
@@ -121,11 +131,6 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("invalid response body, got %s expected `hello world`", p.Message)
 		}
 
-		cancel()
 		break
-	}
-	err := <-errCh
-	if err != nil {
-		t.Fatalf("error from run function: %v", err)
 	}
 }
