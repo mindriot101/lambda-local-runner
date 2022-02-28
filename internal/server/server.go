@@ -21,13 +21,15 @@ type routeDefinition struct {
 
 type Server struct {
 	server *http.Server
+	host string
 	port   int
 
 	routes []routeDefinition
 }
 
-func New(port int) *Server {
+func New(host string, port int) *Server {
 	return &Server{
+		host: host,
 		port: port,
 	}
 }
@@ -54,7 +56,7 @@ func (s *Server) Run() error {
 	}
 
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf("localhost:%d", s.port),
+		Addr:    fmt.Sprintf("%s:%d", s.host, s.port),
 		Handler: router,
 	}
 
