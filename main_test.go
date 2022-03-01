@@ -5,16 +5,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"path"
 	"strings"
 	"testing"
 	"time"
+
+	cp "github.com/otiai10/copy"
 )
 
 // This package contains the integration tests which spin up a real docker
@@ -26,19 +25,9 @@ var integration = flag.Bool("integration", false, "run integration tests")
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if *integration {
-		info, err := os.Stat("testproject/.aws-sam/build/HelloWorldFunction")
-		if err != nil || !info.IsDir() {
-			// sam directory doesn't exist
-			cmd := exec.Command("sam", "build")
-			cmd.Dir = "testproject"
-			cmd.Env = os.Environ()
-			cmd.Env = append(cmd.Env, "PIP_REQUIRE_VIRTUALENV=0")
-			cmd.Stdout = io.Discard
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to build SAM project: %v\n", err)
-				os.Exit(1)
-			}
+		if err := cp.Copy("testdata/integration/v1", "testdata/integration/src"); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to set up initial data directory: %v\n", err)
+			os.Exit(1)
 		}
 	}
 	os.Exit(m.Run())
@@ -57,58 +46,6 @@ func (r *FirstResponse) CheckMatches(t *testing.T, body []byte) {
 	if r.Message != got.Message {
 		t.Fatalf("invalid message (response: %s, expected %s)", got.Message, r.Message)
 	}
-}
-
-func (r *FirstResponse) NewFileContents(old []byte) ([]byte, error) {
-	s := string(old)
-
-	var b strings.Builder
-
-	replacing := false
-	for _, line := range strings.Split(s, "\n") {
-		if strings.Contains(line, "REPLACE MARKER START") {
-			replacing = true
-
-			// add replacement
-			b.WriteString("# REPLACE MARKER START\n")
-			b.WriteString("\"message\": \"hello world\",\n")
-		} else if strings.Contains(line, "REPLACE MARKER END") {
-			replacing = false
-		}
-
-		if !replacing {
-			b.WriteString(line + "\n")
-		}
-	}
-
-	out := b.String()
-	return []byte(out), nil
-}
-
-func (r *SecondResponse) NewFileContents(old []byte) ([]byte, error) {
-	s := string(old)
-
-	var b strings.Builder
-
-	replacing := false
-	for _, line := range strings.Split(s, "\n") {
-		if strings.Contains(line, "REPLACE MARKER START") {
-			replacing = true
-
-			// add replacement
-			b.WriteString("# REPLACE MARKER START\n")
-			b.WriteString("\"message\": \"hello other\",\n\"foo\": 42,\n")
-		} else if strings.Contains(line, "REPLACE MARKER END") {
-			replacing = false
-		}
-
-		if !replacing {
-			b.WriteString(line + "\n")
-		}
-	}
-
-	out := b.String()
-	return []byte(out), nil
 }
 
 type SecondResponse struct {
@@ -132,7 +69,6 @@ func (r *SecondResponse) CheckMatches(t *testing.T, body []byte) {
 
 type expectation interface {
 	CheckMatches(t *testing.T, body []byte)
-	NewFileContents(old []byte) ([]byte, error)
 }
 
 func TestIntegration(t *testing.T) {
@@ -146,9 +82,9 @@ func TestIntegration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	opts := Opts{
-		RootDir: "testproject/.aws-sam/build",
+		RootDir: "testdata/integration/src",
 		Args: Args{
-			Template: "testproject/template.yaml",
+			Template: "testdata/integration/template.yaml",
 		},
 		Host:    host,
 		Port:    port,
@@ -158,8 +94,6 @@ func TestIntegration(t *testing.T) {
 	firstResponse := FirstResponse{
 		Message: "hello world",
 	}
-	handlerFilename := path.Join(opts.RootDir, "HelloWorldFunction", "app.py")
-	ensureHandlerContents(t, handlerFilename, &firstResponse)
 
 	errCh := make(chan error)
 	go func() {
@@ -175,7 +109,15 @@ func TestIntegration(t *testing.T) {
 		Message: "hello other",
 		Foo:     42,
 	}
-	ensureHandlerContents(t, handlerFilename, &secondResponse)
+
+	// write the new file contents
+	newContents, err := ioutil.ReadFile("testdata/integration/v2/HelloWorldFunction/app.py")
+	if err != nil {
+		t.Fatalf("reading fixture for file change: %v", err)
+	}
+	if err := ioutil.WriteFile("testdata/integration/src/HelloWorldFunction/app.py", newContents, 0644); err != nil {
+		t.Fatalf("writing new source: %v", err)
+	}
 
 	t.Logf("waiting for reload")
 	time.Sleep(3 * time.Second)
@@ -184,25 +126,8 @@ func TestIntegration(t *testing.T) {
 
 	cancel()
 
-	err := <-errCh
-	if err != nil {
+	if err := <-errCh; err != nil {
 		t.Fatalf("error from run function: %v", err)
-	}
-}
-
-// ensureHandlerContents makes sure the handler contents in the accompanying
-// test project matches the expectation
-func ensureHandlerContents(t *testing.T, filename string, res expectation) {
-	b, err := ioutil.ReadFile(filename)
-	if err != nil {
-		t.Fatalf("could not edit file %s: %v", filename, err)
-	}
-	newContents, err := res.NewFileContents(b)
-	if err != nil {
-		t.Fatalf("could not generate new file contents %v", err)
-	}
-	if err := ioutil.WriteFile(filename, newContents, 0644); err != nil {
-		t.Fatalf("could not write file contents to file %s: %v", filename, err)
 	}
 }
 
