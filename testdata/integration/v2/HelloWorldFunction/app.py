@@ -37,9 +37,8 @@ def lambda_handler(event, context):
         "statusCode": 200,
         "body": json.dumps(
             {
-                # REPLACE MARKER START
-                "message": "hello world",
-                # REPLACE MARKER END
+                "message": "hello other",
+                "foo": 42,
             }
         ),
         "headers": {

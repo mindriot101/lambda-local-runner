@@ -1,3 +1,5 @@
 /lambda-local-runner
 /dist
 c.out
+__pycache__
+/testdata/integration/src

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"path"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/awslabs/goformation/v5"
 	"github.com/awslabs/goformation/v5/cloudformation/serverless"
@@ -70,12 +72,24 @@ func (e EndpointMapping) MarshalJSON() ([]byte, error) {
 	return res, nil
 }
 
+// https://stackoverflow.com/a/31832326
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+// https://stackoverflow.com/a/31832326
+func randStringRunes(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
+}
+
 // containerName generates the container name that is meant to be both:
 // * informative, and
 // * unique
-func containerName(endpoint Endpoint, definition HandlerDefinition, containerIdx int) string {
+func containerName(endpoint Endpoint, definition HandlerDefinition) string {
 	sanitisedURL := strings.ReplaceAll(endpoint.URLPath, "/", "_")
-	return fmt.Sprintf("llr-%s-%s%s-%d", definition.LogicalID, endpoint.Method, sanitisedURL, containerIdx)
+	return fmt.Sprintf("llr-%s-%s%s-%s", definition.LogicalID, endpoint.Method, sanitisedURL, randStringRunes(6))
 }
 
 func parseTemplate(filename string) (EndpointMapping, error) {
@@ -173,6 +187,12 @@ func run(ctx context.Context, opts Opts) error {
 	done := make(chan struct{})
 	dockerCtx := context.Background()
 
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("creating file system watcher: %w", err)
+	}
+	defer watcher.Close()
+
 	endpointStrings := []string{}
 	var wg sync.WaitGroup
 	for endpoint, definition := range endpointMapping {
@@ -183,7 +203,7 @@ func run(ctx context.Context, opts Opts) error {
 			return fmt.Errorf("building docker image: %w", err)
 		}
 
-		containerName := containerName(endpoint, definition, containerIdx)
+		containerName := containerName(endpoint, definition)
 
 		// FIXME: this leaks implementation details about the docker layer to
 		// the lambda host
@@ -206,6 +226,13 @@ func run(ctx context.Context, opts Opts) error {
 
 		endpointStrings = append(endpointStrings,
 			fmt.Sprintf(" - %s http://%s:%d%s\n", string(endpoint.Method), opts.Host, opts.Port, endpoint.URLPath))
+
+		watchPath := path.Join(opts.RootDir, definition.LogicalID)
+		log.Debug().Str("path", watchPath).Msg("adding path to watch list")
+		if err := watcher.Add(watchPath); err != nil {
+			log.Warn().Err(err).Str("path", watchPath).Msg("could not watch directory")
+		}
+
 	}
 
 	srv.Run()
@@ -217,13 +244,6 @@ func run(ctx context.Context, opts Opts) error {
 	for _, s := range endpointStrings {
 		fmt.Fprintf(os.Stderr, s)
 	}
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("creating file system watcher: %w", err)
-	}
-	defer watcher.Close()
-	watcher.Add(opts.RootDir)
 
 	// helper function to print info for the user
 	printShuttingDown := func() {
@@ -260,6 +280,12 @@ func run(ctx context.Context, opts Opts) error {
 					host.Restart()
 				}
 			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				continue
+			}
+
+			log.Warn().Err(err).Msg("error watching code")
 		case <-done:
 			return nil
 		}
@@ -267,6 +293,10 @@ func run(ctx context.Context, opts Opts) error {
 }
 
 func main() {
+	// so we can generate random names across multiple running copies of the
+	// binary
+	rand.Seed(time.Now().UnixNano())
+
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	log.Logger = log.Output(zerolog.ConsoleWriter{
 		Out: os.Stderr,
