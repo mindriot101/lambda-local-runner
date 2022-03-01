@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 	"testing"
 	"time"
@@ -57,7 +57,58 @@ func (r *FirstResponse) CheckMatches(t *testing.T, body []byte) {
 	if r.Message != got.Message {
 		t.Fatalf("invalid message (response: %s, expected %s)", got.Message, r.Message)
 	}
+}
 
+func (r *FirstResponse) NewFileContents(old []byte) ([]byte, error) {
+	s := string(old)
+
+	var b strings.Builder
+
+	replacing := false
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, "REPLACE MARKER START") {
+			replacing = true
+
+			// add replacement
+			b.WriteString("# REPLACE MARKER START\n")
+			b.WriteString("\"message\": \"hello world\",\n")
+		} else if strings.Contains(line, "REPLACE MARKER END") {
+			replacing = false
+		}
+
+		if !replacing {
+			b.WriteString(line + "\n")
+		}
+	}
+
+	out := b.String()
+	return []byte(out), nil
+}
+
+func (r *SecondResponse) NewFileContents(old []byte) ([]byte, error) {
+	s := string(old)
+
+	var b strings.Builder
+
+	replacing := false
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, "REPLACE MARKER START") {
+			replacing = true
+
+			// add replacement
+			b.WriteString("# REPLACE MARKER START\n")
+			b.WriteString("\"message\": \"hello other\",\n\"foo\": 42,\n")
+		} else if strings.Contains(line, "REPLACE MARKER END") {
+			replacing = false
+		}
+
+		if !replacing {
+			b.WriteString(line + "\n")
+		}
+	}
+
+	out := b.String()
+	return []byte(out), nil
 }
 
 type SecondResponse struct {
@@ -81,6 +132,7 @@ func (r *SecondResponse) CheckMatches(t *testing.T, body []byte) {
 
 type expectation interface {
 	CheckMatches(t *testing.T, body []byte)
+	NewFileContents(old []byte) ([]byte, error)
 }
 
 func TestIntegration(t *testing.T) {
@@ -92,6 +144,7 @@ func TestIntegration(t *testing.T) {
 	port := 8080
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	opts := Opts{
 		RootDir: "testproject/.aws-sam/build",
 		Args: Args{
@@ -102,18 +155,32 @@ func TestIntegration(t *testing.T) {
 		Verbose: []bool{true, true, true},
 	}
 
+	firstResponse := FirstResponse{
+		Message: "hello world",
+	}
+	handlerFilename := path.Join(opts.RootDir, "HelloWorldFunction", "app.py")
+	ensureHandlerContents(t, handlerFilename, &firstResponse)
+
 	errCh := make(chan error)
 	go func() {
-		log.Printf("starting web server")
+		t.Logf("starting web server")
 		errCh <- run(ctx, opts)
-		log.Printf("shutting down web server")
+		t.Logf("shutting down web server")
 	}()
 
-	assertHTTPResponse(t, host, port, &FirstResponse{
-		Message: "hello world",
-	})
+	assertHTTPResponse(t, host, port, &firstResponse)
 
-	// TODO: trigger reload of the source
+	// trigger reload
+	secondResponse := SecondResponse{
+		Message: "hello other",
+		Foo:     42,
+	}
+	ensureHandlerContents(t, handlerFilename, &secondResponse)
+
+	t.Logf("waiting for reload")
+	time.Sleep(3 * time.Second)
+
+	assertHTTPResponse(t, host, port, &secondResponse)
 
 	cancel()
 
@@ -123,18 +190,34 @@ func TestIntegration(t *testing.T) {
 	}
 }
 
+// ensureHandlerContents makes sure the handler contents in the accompanying
+// test project matches the expectation
+func ensureHandlerContents(t *testing.T, filename string, res expectation) {
+	b, err := ioutil.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("could not edit file %s: %v", filename, err)
+	}
+	newContents, err := res.NewFileContents(b)
+	if err != nil {
+		t.Fatalf("could not generate new file contents %v", err)
+	}
+	if err := ioutil.WriteFile(filename, newContents, 0644); err != nil {
+		t.Fatalf("could not write file contents to file %s: %v", filename, err)
+	}
+}
+
 func assertHTTPResponse(t *testing.T, host string, port int, expected expectation) {
 	t.Helper()
 
 	http5XXCount := 0
 	for {
 		// try to make an HTTP request
-		log.Printf("making HTTP request")
+		t.Logf("making HTTP request")
 		resp, err := http.Get(fmt.Sprintf("http://%s:%d/hello", host, port))
 		if err != nil {
 			if _, ok := err.(net.Error); ok {
 				if strings.Contains(err.Error(), "connection refused") {
-					log.Printf("server not up yet")
+					t.Logf("server not up yet")
 					time.Sleep(time.Second)
 					continue
 				}
@@ -142,13 +225,13 @@ func assertHTTPResponse(t *testing.T, host string, port int, expected expectatio
 				t.Fatalf("error making HTTP request: %v", err)
 			}
 		}
-		log.Printf("request completed")
+		t.Logf("request completed")
 		defer resp.Body.Close()
 
 		// assert on the response
 		if resp.StatusCode != http.StatusOK {
 			if resp.StatusCode == 500 {
-				log.Printf("got 5XX, current count: %d", http5XXCount)
+				t.Logf("got 5XX, current count: %d", http5XXCount)
 				http5XXCount++
 
 				if http5XXCount >= 5 {

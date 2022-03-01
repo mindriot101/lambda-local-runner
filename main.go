@@ -187,6 +187,12 @@ func run(ctx context.Context, opts Opts) error {
 	done := make(chan struct{})
 	dockerCtx := context.Background()
 
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("creating file system watcher: %w", err)
+	}
+	defer watcher.Close()
+
 	endpointStrings := []string{}
 	var wg sync.WaitGroup
 	for endpoint, definition := range endpointMapping {
@@ -220,6 +226,13 @@ func run(ctx context.Context, opts Opts) error {
 
 		endpointStrings = append(endpointStrings,
 			fmt.Sprintf(" - %s http://%s:%d%s\n", string(endpoint.Method), opts.Host, opts.Port, endpoint.URLPath))
+
+		watchPath := path.Join(opts.RootDir, definition.LogicalID)
+		log.Debug().Str("path", watchPath).Msg("adding path to watch list")
+		if err := watcher.Add(watchPath); err != nil {
+			log.Warn().Err(err).Str("path", watchPath).Msg("could not watch directory")
+		}
+
 	}
 
 	srv.Run()
@@ -231,13 +244,6 @@ func run(ctx context.Context, opts Opts) error {
 	for _, s := range endpointStrings {
 		fmt.Fprintf(os.Stderr, s)
 	}
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("creating file system watcher: %w", err)
-	}
-	defer watcher.Close()
-	watcher.Add(opts.RootDir)
 
 	// helper function to print info for the user
 	printShuttingDown := func() {
@@ -274,6 +280,12 @@ func run(ctx context.Context, opts Opts) error {
 					host.Restart()
 				}
 			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				continue
+			}
+
+			log.Warn().Err(err).Msg("error watching code")
 		case <-done:
 			return nil
 		}
