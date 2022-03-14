@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/awslabs/goformation/v5"
-	"github.com/awslabs/goformation/v5/cloudformation/serverless"
+	"github.com/awslabs/goformation/v6"
+	"github.com/awslabs/goformation/v6/cloudformation/serverless"
 	"github.com/docker/docker/client"
 	"github.com/fsnotify/fsnotify"
 	"github.com/jessevdk/go-flags"
@@ -109,18 +109,18 @@ func parseTemplate(filename string) (EndpointMapping, error) {
 			}
 
 			var architecture string
-			if len(f.Architectures) >= 1 {
-				architecture = f.Architectures[0]
+			if len(*f.Architectures) >= 1 {
+				architecture = (*f.Architectures)[0]
 			} else {
 				architecture = "x86_64"
 			}
 
 			runtime := "x86_64"
-			if f.Runtime != "" {
-				runtime = f.Runtime
+			if *f.Runtime != "" {
+				runtime = *f.Runtime
 			}
 
-			for _, event := range f.Events {
+			for _, event := range *f.Events {
 				if event.Type != "Api" {
 					continue
 				}
@@ -139,7 +139,7 @@ func parseTemplate(filename string) (EndpointMapping, error) {
 					LogicalID:    logicalID,
 					Architecture: architecture,
 					Runtime:      runtime,
-					Handler:      f.Handler,
+					Handler:      *f.Handler,
 					Port:         -1,
 				}
 				out[endpoint] = def

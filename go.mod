@@ -15,7 +15,7 @@ require (
 
 require (
 	github.com/Microsoft/go-winio v0.5.1 // indirect
-	github.com/awslabs/goformation/v5 v5.4.10
+	github.com/awslabs/goformation/v6 v6.0.2
 	github.com/containerd/containerd v1.6.0 // indirect
 	github.com/docker/distribution v2.8.0+incompatible // indirect
 	github.com/docker/go-connections v0.4.0
